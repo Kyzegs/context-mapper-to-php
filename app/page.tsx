@@ -39,6 +39,7 @@ interface StoredSettings {
   constructorPropertyPromotion: boolean;
   doctrineCollectionDocstrings: boolean;
   doctrineAttributes?: boolean;
+  directoryStructure?: 'flat' | 'bounded-context' | 'aggregate' | 'psr-4' | 'flat-by-type' | 'bounded-context-by-type' | 'aggregate-by-type' | 'psr-4-by-type';
   cmlContent?: string;
   selectedFile?: string;
 }
@@ -56,6 +57,7 @@ export default function Home() {
   const [constructorPropertyPromotion, setConstructorPropertyPromotion] = useState(false);
   const [doctrineCollectionDocstrings, setDoctrineCollectionDocstrings] = useState(false);
   const [doctrineAttributes, setDoctrineAttributes] = useState(true);
+  const [directoryStructure, setDirectoryStructure] = useState<'flat' | 'bounded-context' | 'aggregate' | 'psr-4' | 'flat-by-type' | 'bounded-context-by-type' | 'aggregate-by-type' | 'psr-4-by-type'>('flat');
   const [phpFiles, setPhpFiles] = useState<GeneratedFile[]>([]);
   const [selectedPhpFile, setSelectedPhpFile] = useState<string>('');
   const [outputOpen, setOutputOpen] = useState(false);
@@ -81,6 +83,7 @@ export default function Home() {
         setConstructorPropertyPromotion(settings.constructorPropertyPromotion ?? false);
         setDoctrineCollectionDocstrings(settings.doctrineCollectionDocstrings ?? false);
         setDoctrineAttributes(settings.doctrineAttributes ?? true);
+        setDirectoryStructure(settings.directoryStructure || 'flat');
         
         // Note: selectedFile and cmlContent are intentionally not persisted
       }
@@ -106,6 +109,7 @@ export default function Home() {
         constructorPropertyPromotion,
         doctrineCollectionDocstrings,
         doctrineAttributes,
+        directoryStructure,
         // Note: cmlContent and selectedFile are intentionally not persisted
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
@@ -122,6 +126,7 @@ export default function Home() {
     constructorPropertyPromotion,
     doctrineCollectionDocstrings,
     doctrineAttributes,
+    directoryStructure,
     isInitialized,
     // Note: cmlContent and selectedFile are intentionally not persisted, so they're not in the dependency array
   ]);
@@ -175,6 +180,7 @@ export default function Home() {
         constructorPropertyPromotion: constructorType !== 'none' ? constructorPropertyPromotion : false,
         doctrineCollectionDocstrings: framework === 'doctrine' ? doctrineCollectionDocstrings : false,
         doctrineAttributes: framework === 'doctrine' ? doctrineAttributes : undefined,
+        directoryStructure,
       };
 
       const files = generatePHP(model, config);
@@ -245,7 +251,7 @@ export default function Home() {
       const zip = new JSZip();
 
       for (const file of phpFiles) {
-        zip.file(file.filename, file.content);
+        zip.file(file.path, file.content);
       }
 
       const zipBlob = await zip.generateAsync({ type: 'blob' });
@@ -390,6 +396,35 @@ export default function Home() {
               </div>
 
               <div className="space-y-2">
+                <Label>Directory Structure</Label>
+                <Select value={directoryStructure} onValueChange={(v) => setDirectoryStructure(v as any)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="flat">Flat (all files in root)</SelectItem>
+                    <SelectItem value="flat-by-type">Flat by Type (Enum/, ValueObject/, Entity/)</SelectItem>
+                    <SelectItem value="bounded-context">By Bounded Context</SelectItem>
+                    <SelectItem value="bounded-context-by-type">By Bounded Context + Type</SelectItem>
+                    <SelectItem value="aggregate">By Bounded Context / Aggregate</SelectItem>
+                    <SelectItem value="aggregate-by-type">By Bounded Context / Aggregate + Type</SelectItem>
+                    <SelectItem value="psr-4">PSR-4 (with namespace structure)</SelectItem>
+                    <SelectItem value="psr-4-by-type">PSR-4 + Type folders</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {directoryStructure === 'flat' && 'All files in a single directory'}
+                  {directoryStructure === 'flat-by-type' && 'Files grouped by type (Enum/, ValueObject/, Entity/) in root'}
+                  {directoryStructure === 'bounded-context' && 'Files organized by bounded context folders'}
+                  {directoryStructure === 'bounded-context-by-type' && 'Files organized by bounded context, then by type'}
+                  {directoryStructure === 'aggregate' && 'Files organized by bounded context and aggregate folders'}
+                  {directoryStructure === 'aggregate-by-type' && 'Files organized by bounded context/aggregate, then by type'}
+                  {directoryStructure === 'psr-4' && 'PSR-4 structure with namespace-based directories and namespaces'}
+                  {directoryStructure === 'psr-4-by-type' && 'PSR-4 structure with type folders (Enum/, ValueObject/, Entity/)'}
+                </p>
+              </div>
+
+              <div className="space-y-2">
                 <Label>Constructor</Label>
                 <Select
                   value={constructorType}
@@ -526,7 +561,9 @@ export default function Home() {
                       aria-expanded={outputOpen}
                       className="w-full justify-between"
                     >
-                      {selectedPhpFile || 'Select a file...'}
+                      {selectedPhpFile
+                        ? (phpFiles.find(f => f.filename === selectedPhpFile)?.path || selectedPhpFile)
+                        : 'Select a file...'}
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
@@ -557,7 +594,7 @@ export default function Home() {
                                   {file.type === 'valueobject' && '📦'}
                                   {file.type === 'entity' && '🏗️'}
                                 </span>
-                                <span>{file.filename}</span>
+                                <span>{file.path !== file.filename ? file.path : file.filename}</span>
                               </div>
                             </CommandItem>
                           ))}
@@ -582,6 +619,9 @@ export default function Home() {
                           {file.type === 'entity' && '🏗️ Entity'}
                         </span>
                         <span className="text-xs text-muted-foreground">
+                          {file.path !== file.filename && (
+                            <span className="text-muted-foreground/70">{file.path} • </span>
+                          )}
                           {file.content.length} characters
                         </span>
                       </div>

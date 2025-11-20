@@ -26,10 +26,12 @@ export interface GeneratorConfig {
   constructorPropertyPromotion: boolean;
   doctrineCollectionDocstrings?: boolean;
   doctrineAttributes?: boolean;
+  directoryStructure?: 'flat' | 'bounded-context' | 'aggregate' | 'psr-4' | 'flat-by-type' | 'bounded-context-by-type' | 'aggregate-by-type' | 'psr-4-by-type';
 }
 
 export interface GeneratedFile {
   filename: string;
+  path: string; // Full path including directory structure
   content: string;
   type: 'enum' | 'valueobject' | 'entity';
 }
@@ -39,14 +41,31 @@ export function generatePHP(
   config: GeneratorConfig
 ): GeneratedFile[] {
   const files: GeneratedFile[] = [];
+  const directoryStructure = config.directoryStructure || 'flat';
   
   for (const boundedContext of model.boundedContexts) {
     for (const aggregate of boundedContext.aggregates) {
+      // Determine if we should group by type
+      const groupByType = directoryStructure?.endsWith('-by-type') || false;
+      // Get base structure (without -by-type suffix)
+      const baseStructure = directoryStructure?.replace('-by-type', '') as 'flat' | 'bounded-context' | 'aggregate' | 'psr-4' | undefined || 'flat';
+      
+      // Determine directory path based on structure option
+      const directoryPath = getDirectoryPath(
+        boundedContext.name,
+        aggregate.name,
+        baseStructure
+      );
+      
       // Generate enums
       for (const enumDef of aggregate.enums) {
-        const enumFile = generateEnum(enumDef, config);
+        const enumFile = generateEnum(enumDef, config, boundedContext.name, aggregate.name);
+        const filename = `${enumDef.name}.php`;
+        const typeFolder = groupByType ? 'Enum/' : '';
+        const fullPath = buildFilePath(directoryPath, typeFolder, filename);
         files.push({
-          filename: `${enumDef.name}.php`,
+          filename,
+          path: fullPath,
           content: enumFile,
           type: 'enum',
         });
@@ -54,9 +73,13 @@ export function generatePHP(
       
       // Generate value objects first (they might be referenced by entities)
       for (const valueObject of aggregate.valueObjects) {
-        const voFile = generateValueObject(valueObject, config);
+        const voFile = generateValueObject(valueObject, config, boundedContext.name, aggregate.name);
+        const filename = `${valueObject.name}.php`;
+        const typeFolder = groupByType ? 'ValueObject/' : '';
+        const fullPath = buildFilePath(directoryPath, typeFolder, filename);
         files.push({
-          filename: `${valueObject.name}.php`,
+          filename,
+          path: fullPath,
           content: voFile,
           type: 'valueobject',
         });
@@ -64,9 +87,13 @@ export function generatePHP(
       
       // Generate entities
       for (const entity of aggregate.entities) {
-        const entityFile = generateEntity(entity, aggregate, config);
+        const entityFile = generateEntity(entity, aggregate, config, boundedContext.name, aggregate.name);
+        const filename = `${entity.name}.php`;
+        const typeFolder = groupByType ? 'Entity/' : '';
+        const fullPath = buildFilePath(directoryPath, typeFolder, filename);
         files.push({
-          filename: `${entity.name}.php`,
+          filename,
+          path: fullPath,
           content: entityFile,
           type: 'entity',
         });
@@ -77,11 +104,62 @@ export function generatePHP(
   return files;
 }
 
-function generateEnum(enumDef: CMLEnum, config: GeneratorConfig): string {
+function getDirectoryPath(
+  boundedContextName: string,
+  aggregateName: string,
+  structure: 'flat' | 'bounded-context' | 'aggregate' | 'psr-4'
+): string {
+  switch (structure) {
+    case 'flat':
+      return '';
+    
+    case 'bounded-context':
+      // Use PascalCase for directory names (CML names are already PascalCase)
+      return boundedContextName;
+    
+    case 'aggregate':
+      // Use PascalCase for directory names
+      return `${boundedContextName}/${aggregateName}`;
+    
+    case 'psr-4':
+      // PSR-4 structure: namespace-based directory structure
+      // Directory structure matches namespace structure (PascalCase)
+      return `${boundedContextName}/${aggregateName}`;
+    
+    default:
+      return '';
+  }
+}
+
+function buildFilePath(basePath: string, typeFolder: string, filename: string): string {
+  const parts = [basePath, typeFolder, filename].filter(Boolean);
+  return parts.join('/');
+}
+
+function toSnakeCase(str: string): string {
+  return str.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '');
+}
+
+function generateEnum(
+  enumDef: CMLEnum,
+  config: GeneratorConfig,
+  boundedContextName?: string,
+  aggregateName?: string
+): string {
   const file = new PhpFile();
   file.setStrictTypes();
   
-  const namespace = config.namespace || 'App\\Models';
+  let namespace = config.namespace || 'App\\Models';
+  // Get base structure (without -by-type suffix) for namespace logic
+  const baseStructure = config.directoryStructure?.replace('-by-type', '') as 'flat' | 'bounded-context' | 'aggregate' | 'psr-4' | undefined || 'flat';
+  
+  // For PSR-4 and aggregate structures, append bounded context and aggregate to namespace
+  if ((baseStructure === 'psr-4' || baseStructure === 'aggregate') && boundedContextName && aggregateName) {
+    namespace = `${namespace}\\${boundedContextName}\\${aggregateName}`;
+  } else if (baseStructure === 'bounded-context' && boundedContextName) {
+    namespace = `${namespace}\\${boundedContextName}`;
+  }
+  
   const ns = file.addNamespace(namespace);
   
   // Add enum directly to file (not namespace) for proper rendering
@@ -105,12 +183,24 @@ function generateEnum(enumDef: CMLEnum, config: GeneratorConfig): string {
 
 function generateValueObject(
   valueObject: CMLValueObject,
-  config: GeneratorConfig
+  config: GeneratorConfig,
+  boundedContextName?: string,
+  aggregateName?: string
 ): string {
   const file = new PhpFile();
   file.setStrictTypes();
   
-  const namespace = config.namespace || 'App\\Models';
+  let namespace = config.namespace || 'App\\Models';
+  // Get base structure (without -by-type suffix) for namespace logic
+  const baseStructure = config.directoryStructure?.replace('-by-type', '') as 'flat' | 'bounded-context' | 'aggregate' | 'psr-4' | undefined || 'flat';
+  
+  // For PSR-4 and aggregate structures, append bounded context and aggregate to namespace
+  if ((baseStructure === 'psr-4' || baseStructure === 'aggregate') && boundedContextName && aggregateName) {
+    namespace = `${namespace}\\${boundedContextName}\\${aggregateName}`;
+  } else if (baseStructure === 'bounded-context' && boundedContextName) {
+    namespace = `${namespace}\\${boundedContextName}`;
+  }
+  
   const ns = file.addNamespace(namespace);
   
   const class_ = ns.addClass(valueObject.name);
@@ -232,12 +322,24 @@ function generateValueObject(
 function generateEntity(
   entity: CMLEntity,
   aggregate: { enums: CMLEnum[]; valueObjects: CMLValueObject[] },
-  config: GeneratorConfig
+  config: GeneratorConfig,
+  boundedContextName?: string,
+  aggregateName?: string
 ): string {
   const file = new PhpFile();
   file.setStrictTypes();
   
-  const namespace = config.namespace || 'App\\Models';
+  let namespace = config.namespace || 'App\\Models';
+  // Get base structure (without -by-type suffix) for namespace logic
+  const baseStructure = config.directoryStructure?.replace('-by-type', '') as 'flat' | 'bounded-context' | 'aggregate' | 'psr-4' | undefined || 'flat';
+  
+  // For PSR-4 and aggregate structures, append bounded context and aggregate to namespace
+  if ((baseStructure === 'psr-4' || baseStructure === 'aggregate') && boundedContextName && aggregateName) {
+    namespace = `${namespace}\\${boundedContextName}\\${aggregateName}`;
+  } else if (baseStructure === 'bounded-context' && boundedContextName) {
+    namespace = `${namespace}\\${boundedContextName}`;
+  }
+  
   const ns = file.addNamespace(namespace);
   
   const class_ = ns.addClass(entity.name);
@@ -524,10 +626,6 @@ function mapDoctrineType(type: string): string {
 
 function capitalize(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
-function toSnakeCase(str: string): string {
-  return str.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '');
 }
 
 function getInversePropertyName(entityName: string): string {
