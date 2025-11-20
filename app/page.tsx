@@ -10,9 +10,12 @@ import { Label } from '@/components/ui/label';
 import { parseCML } from '@/lib/cml-parser';
 import { generatePHP, type GeneratorConfig } from '@/lib/php-generator';
 import { Download, FileText, Settings, FolderDown, Check, ChevronsUpDown, Copy, CheckCircle } from 'lucide-react';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { tomorrow } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { useTheme } from 'next-themes';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import type { GeneratedFile } from '@/lib/php-generator';
@@ -45,6 +48,7 @@ interface StoredSettings {
 }
 
 export default function Home() {
+  const { theme } = useTheme();
   const [cmlContent, setCmlContent] = useState('');
   const [selectedFile, setSelectedFile] = useState<string>('');
   const [open, setOpen] = useState(false);
@@ -274,11 +278,14 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        <div className="space-y-2">
-          <h1 className="text-4xl font-bold tracking-tight">Context Mapper to PHP</h1>
-          <p className="text-muted-foreground">
-            Convert Context Mapper Language (CML) files to PHP classes for Laravel, Doctrine, or plain PHP
-          </p>
+        <div className="flex items-start justify-between">
+          <div className="space-y-2">
+            <h1 className="text-4xl font-bold tracking-tight">Context Mapper to PHP</h1>
+            <p className="text-muted-foreground">
+              Convert Context Mapper Language (CML) files to PHP classes for Laravel, Doctrine, or plain PHP
+            </p>
+          </div>
+          <ThemeToggle />
         </div>
 
         <div className="grid gap-6 md:grid-cols-2">
@@ -651,7 +658,7 @@ export default function Home() {
                     <div className="overflow-x-auto rounded-md border">
                       <SyntaxHighlighter
                         language="php"
-                        style={tomorrow}
+                        style={theme === 'dark' ? tomorrow : oneLight}
                         customStyle={{
                           margin: 0,
                           borderRadius: '0.375rem',
