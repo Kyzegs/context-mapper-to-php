@@ -1,65 +1,637 @@
-import Image from "next/image";
+'use client';
+
+import { useState, useRef, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { parseCML } from '@/lib/cml-parser';
+import { generatePHP, type GeneratorConfig } from '@/lib/php-generator';
+import { Download, FileText, Settings, FolderDown, Check, ChevronsUpDown, Copy, CheckCircle } from 'lucide-react';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { tomorrow } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
+import type { GeneratedFile } from '@/lib/php-generator';
+
+const EXAMPLE_FILES = [
+  'merchant-management-context.cml',
+  'payment-data-context.cml',
+  'chargeback-management-context.cml',
+  'clearing-management-context.cml',
+  'pointofsale-context.cml',
+  'system-data-context.cml',
+  'whitelabel-management-context.cml',
+];
+
+const STORAGE_KEY = 'cml-to-php-settings';
+
+interface StoredSettings {
+  framework: 'laravel' | 'doctrine' | 'plain';
+  publicProperties: boolean;
+  addGetters: boolean;
+  addSetters: boolean;
+  namespace: string;
+  constructorType: 'none' | 'required' | 'all';
+  constructorPropertyPromotion: boolean;
+  doctrineCollectionDocstrings: boolean;
+  doctrineAttributes?: boolean;
+  cmlContent?: string;
+  selectedFile?: string;
+}
 
 export default function Home() {
+  const [cmlContent, setCmlContent] = useState('');
+  const [selectedFile, setSelectedFile] = useState<string>('');
+  const [open, setOpen] = useState(false);
+  const [framework, setFramework] = useState<'laravel' | 'doctrine' | 'plain'>('plain');
+  const [publicProperties, setPublicProperties] = useState(false);
+  const [addGetters, setAddGetters] = useState(true);
+  const [addSetters, setAddSetters] = useState(true);
+  const [namespace, setNamespace] = useState('App\\Models');
+  const [constructorType, setConstructorType] = useState<'none' | 'required' | 'all'>('none');
+  const [constructorPropertyPromotion, setConstructorPropertyPromotion] = useState(false);
+  const [doctrineCollectionDocstrings, setDoctrineCollectionDocstrings] = useState(false);
+  const [doctrineAttributes, setDoctrineAttributes] = useState(true);
+  const [phpFiles, setPhpFiles] = useState<GeneratedFile[]>([]);
+  const [selectedPhpFile, setSelectedPhpFile] = useState<string>('');
+  const [outputOpen, setOutputOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const outputRef = useRef<HTMLDivElement>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [copiedFile, setCopiedFile] = useState<string | null>(null);
+
+  // Load settings from localStorage on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const settings: StoredSettings = JSON.parse(stored);
+        setFramework(settings.framework || 'plain');
+        setPublicProperties(settings.publicProperties ?? false);
+        setAddGetters(settings.addGetters ?? true);
+        setAddSetters(settings.addSetters ?? true);
+        setNamespace(settings.namespace || 'App\\Models');
+        setConstructorType(settings.constructorType || 'none');
+        setConstructorPropertyPromotion(settings.constructorPropertyPromotion ?? false);
+        setDoctrineCollectionDocstrings(settings.doctrineCollectionDocstrings ?? false);
+        setDoctrineAttributes(settings.doctrineAttributes ?? true);
+        
+        // Note: selectedFile and cmlContent are intentionally not persisted
+      }
+    } catch (err) {
+      console.error('Failed to load settings from localStorage:', err);
+    } finally {
+      setIsInitialized(true);
+    }
+  }, []);
+
+  // Save settings to localStorage whenever they change
+  useEffect(() => {
+    if (!isInitialized || typeof window === 'undefined') return;
+    
+    try {
+      const settings: StoredSettings = {
+        framework,
+        publicProperties,
+        addGetters,
+        addSetters,
+        namespace,
+        constructorType,
+        constructorPropertyPromotion,
+        doctrineCollectionDocstrings,
+        doctrineAttributes,
+        // Note: cmlContent and selectedFile are intentionally not persisted
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    } catch (err) {
+      console.error('Failed to save settings to localStorage:', err);
+    }
+  }, [
+    framework,
+    publicProperties,
+    addGetters,
+    addSetters,
+    namespace,
+    constructorType,
+    constructorPropertyPromotion,
+    doctrineCollectionDocstrings,
+    doctrineAttributes,
+    isInitialized,
+    // Note: cmlContent and selectedFile are intentionally not persisted, so they're not in the dependency array
+  ]);
+
+  const loadExampleFile = async (filename: string) => {
+    try {
+      const response = await fetch(`/api/examples/${filename}`);
+      if (!response.ok) throw new Error('Failed to load file');
+      const content = await response.text();
+      setCmlContent(content);
+      setSelectedFile(filename);
+      setError(null);
+    } catch (err) {
+      setError(`Failed to load ${filename}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      setCmlContent(content);
+      setSelectedFile(file.name);
+      setError(null);
+    };
+    reader.onerror = () => {
+      setError('Failed to read file');
+    };
+    reader.readAsText(file);
+  };
+
+  const handleGenerate = () => {
+    try {
+      setError(null);
+      if (!cmlContent.trim()) {
+        setError('Please provide CML content');
+        return;
+      }
+
+      const model = parseCML(cmlContent);
+      const config: GeneratorConfig = {
+        framework,
+        publicProperties,
+        addGetters,
+        addSetters,
+        namespace: namespace || undefined,
+        constructorType,
+        constructorPropertyPromotion: constructorType !== 'none' ? constructorPropertyPromotion : false,
+        doctrineCollectionDocstrings: framework === 'doctrine' ? doctrineCollectionDocstrings : false,
+        doctrineAttributes: framework === 'doctrine' ? doctrineAttributes : undefined,
+      };
+
+      const files = generatePHP(model, config);
+      setPhpFiles(files);
+      // Set the first file as selected
+      if (files.length > 0) {
+        setSelectedPhpFile(files[0].filename);
+      }
+      
+      // Scroll to output after a brief delay to allow state update
+      setTimeout(() => {
+        outputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate PHP code');
+      setPhpFiles([]);
+    }
+  };
+
+  const handleDownloadFile = (file: GeneratedFile) => {
+    const blob = new Blob([file.content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCopyToClipboard = async (file: GeneratedFile) => {
+    try {
+      await navigator.clipboard.writeText(file.content);
+      setCopiedFile(file.filename);
+      // Reset the copied state after 2 seconds
+      setTimeout(() => {
+        setCopiedFile(null);
+      }, 2000);
+    } catch (err) {
+      // Fallback for browsers that don't support clipboard API
+      const textArea = document.createElement('textarea');
+      textArea.value = file.content;
+      textArea.style.position = 'fixed';
+      textArea.style.opacity = '0';
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setCopiedFile(file.filename);
+        setTimeout(() => {
+          setCopiedFile(null);
+        }, 2000);
+      } catch (fallbackErr) {
+        setError('Failed to copy to clipboard');
+      }
+      document.body.removeChild(textArea);
+    }
+  };
+
+  const handleDownloadAll = async () => {
+    if (phpFiles.length === 0) return;
+
+    // Use JSZip if available, otherwise download files sequentially
+    try {
+      // Try to use JSZip for better UX
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+
+      for (const file of phpFiles) {
+        zip.file(file.filename, file.content);
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'generated-php-files.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      // Fallback: download files sequentially
+      for (const file of phpFiles) {
+        setTimeout(() => handleDownloadFile(file), 100);
+      }
+    }
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="min-h-screen bg-background p-4 md:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <div className="space-y-2">
+          <h1 className="text-4xl font-bold tracking-tight">Context Mapper to PHP</h1>
+          <p className="text-muted-foreground">
+            Convert Context Mapper Language (CML) files to PHP classes for Laravel, Doctrine, or plain PHP
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        <div className="grid gap-6 md:grid-cols-2">
+          {/* Input Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                CML Input
+              </CardTitle>
+              <CardDescription>Upload a CML file or select an example</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Example Files</Label>
+                <Popover open={open} onOpenChange={setOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={open}
+                      className="w-full justify-between"
+                    >
+                      {selectedFile || 'Select an example file...'}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search files..." />
+                      <CommandList>
+                        <CommandEmpty>No file found.</CommandEmpty>
+                        <CommandGroup>
+                          {EXAMPLE_FILES.map((file) => (
+                            <CommandItem
+                              key={file}
+                              value={file}
+                              onSelect={() => {
+                                setSelectedFile(file);
+                                loadExampleFile(file);
+                                setOpen(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  'mr-2 h-4 w-4',
+                                  selectedFile === file ? 'opacity-100' : 'opacity-0'
+                                )}
+                              />
+                              {file}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Or Upload Your Own</Label>
+                <input
+                  type="file"
+                  accept=".cml"
+                  onChange={handleFileUpload}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>CML Content</Label>
+                <Textarea
+                  value={cmlContent}
+                  onChange={(e) => setCmlContent(e.target.value)}
+                  placeholder="Paste your CML content here..."
+                  className="min-h-[300px] font-mono text-sm"
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Configuration Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Configuration
+              </CardTitle>
+              <CardDescription>Configure PHP code generation options</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label>Framework</Label>
+                <Select value={framework} onValueChange={(v) => setFramework(v as any)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="plain">Plain PHP</SelectItem>
+                    <SelectItem value="laravel">Laravel</SelectItem>
+                    <SelectItem value="doctrine">Doctrine</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Namespace</Label>
+                <input
+                  type="text"
+                  value={namespace}
+                  onChange={(e) => setNamespace(e.target.value)}
+                  placeholder="App\\Models"
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Constructor</Label>
+                <Select
+                  value={constructorType}
+                  onValueChange={(v) => {
+                    setConstructorType(v as 'none' | 'required' | 'all');
+                    // Reset property promotion when constructor is disabled
+                    if (v === 'none') {
+                      setConstructorPropertyPromotion(false);
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No constructor</SelectItem>
+                    <SelectItem value="required">Constructor with only required properties (Non-nullable)</SelectItem>
+                    <SelectItem value="all">Constructor with all properties</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {constructorType !== 'none' && (
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="property-promotion"
+                    checked={constructorPropertyPromotion}
+                    onCheckedChange={(checked) => setConstructorPropertyPromotion(checked === true)}
+                  />
+                  <Label htmlFor="property-promotion" className="cursor-pointer">
+                    Constructor property promotion
+                  </Label>
+                </div>
+              )}
+
+              {framework === 'doctrine' && (
+                <>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="doctrine-attributes"
+                      checked={doctrineAttributes}
+                      onCheckedChange={(checked) => setDoctrineAttributes(checked === true)}
+                    />
+                    <Label htmlFor="doctrine-attributes" className="cursor-pointer">
+                      Add Doctrine attributes (#[Entity], #[Column], etc.)
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="doctrine-docstrings"
+                      checked={doctrineCollectionDocstrings}
+                      onCheckedChange={(checked) => setDoctrineCollectionDocstrings(checked === true)}
+                    />
+                    <Label htmlFor="doctrine-docstrings" className="cursor-pointer">
+                      Add Collection docstrings (Collection&lt;array-key, Entity&gt;)
+                    </Label>
+                  </div>
+                </>
+              )}
+
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="public-props"
+                    checked={publicProperties}
+                    onCheckedChange={(checked) => setPublicProperties(checked === true)}
+                  />
+                  <Label htmlFor="public-props" className="cursor-pointer">
+                    Public properties (default: private)
+                  </Label>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="getters"
+                    checked={addGetters}
+                    onCheckedChange={(checked) => setAddGetters(checked === true)}
+                  />
+                  <Label htmlFor="getters" className="cursor-pointer">
+                    Add getters
+                  </Label>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="setters"
+                    checked={addSetters}
+                    onCheckedChange={(checked) => setAddSetters(checked === true)}
+                  />
+                  <Label htmlFor="setters" className="cursor-pointer">
+                    Add setters
+                  </Label>
+                </div>
+              </div>
+
+              <Button onClick={handleGenerate} className="w-full" size="lg">
+                Generate PHP Code
+              </Button>
+            </CardContent>
+          </Card>
         </div>
-      </main>
+
+        {/* Error Display */}
+        {error && (
+          <Card className="border-destructive">
+            <CardContent className="pt-6">
+              <p className="text-sm text-destructive">{error}</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Output Section */}
+        {phpFiles.length > 0 && (
+          <Card ref={outputRef}>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Generated PHP Files ({phpFiles.length})</CardTitle>
+                <div className="flex gap-2">
+                  <Button onClick={handleDownloadAll} variant="outline" size="sm">
+                    <FolderDown className="mr-2 h-4 w-4" />
+                    Download All
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Select File</Label>
+                <Popover open={outputOpen} onOpenChange={setOutputOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={outputOpen}
+                      className="w-full justify-between"
+                    >
+                      {selectedPhpFile || 'Select a file...'}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search files..." />
+                      <CommandList>
+                        <CommandEmpty>No file found.</CommandEmpty>
+                        <CommandGroup>
+                          {phpFiles.map((file) => (
+                            <CommandItem
+                              key={file.filename}
+                              value={file.filename}
+                              onSelect={() => {
+                                setSelectedPhpFile(file.filename);
+                                setOutputOpen(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  'mr-2 h-4 w-4',
+                                  selectedPhpFile === file.filename ? 'opacity-100' : 'opacity-0'
+                                )}
+                              />
+                              <div className="flex items-center gap-2">
+                                <span>
+                                  {file.type === 'enum' && '📋'}
+                                  {file.type === 'valueobject' && '📦'}
+                                  {file.type === 'entity' && '🏗️'}
+                                </span>
+                                <span>{file.filename}</span>
+                              </div>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+              
+              {selectedPhpFile && (() => {
+                const file = phpFiles.find(f => f.filename === selectedPhpFile);
+                if (!file) return null;
+                
+                return (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">
+                          {file.type === 'enum' && '📋 Enum'}
+                          {file.type === 'valueobject' && '📦 Value Object'}
+                          {file.type === 'entity' && '🏗️ Entity'}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {file.content.length} characters
+                        </span>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={() => handleCopyToClipboard(file)}
+                          variant="ghost"
+                          size="sm"
+                          title="Copy to clipboard"
+                        >
+                          {copiedFile === file.filename ? (
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                          ) : (
+                            <Copy className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          onClick={() => handleDownloadFile(file)}
+                          variant="ghost"
+                          size="sm"
+                          title="Download file"
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto rounded-md border">
+                      <SyntaxHighlighter
+                        language="php"
+                        style={tomorrow}
+                        customStyle={{
+                          margin: 0,
+                          borderRadius: '0.375rem',
+                          fontSize: '0.875rem',
+                          lineHeight: '1.5',
+                          padding: '1rem',
+                        }}
+                        showLineNumbers={true}
+                        wrapLines={true}
+                      >
+                        {file.content}
+                      </SyntaxHighlighter>
+                    </div>
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }
