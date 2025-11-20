@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { parseCML } from '@/lib/cml-parser';
 import { generatePHP, type GeneratorConfig } from '@/lib/php-generator';
 import { Download, FileText, Settings, FolderDown, Check, ChevronsUpDown, Copy, CheckCircle } from 'lucide-react';
+import { FileExplorer } from '@/components/file-explorer';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -377,155 +378,176 @@ export default function Home() {
               <CardDescription>Configure PHP code generation options</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="space-y-2">
-                <Label>Framework</Label>
-                <Select value={framework} onValueChange={(v) => setFramework(v as any)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="plain">Plain PHP</SelectItem>
-                    <SelectItem value="laravel">Laravel</SelectItem>
-                    <SelectItem value="doctrine">Doctrine</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* General Settings Section */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold">General Settings</h3>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Framework</Label>
+                    <Select value={framework} onValueChange={(v) => setFramework(v as any)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="plain">Plain PHP</SelectItem>
+                        <SelectItem value="laravel">Laravel</SelectItem>
+                        <SelectItem value="doctrine">Doctrine</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-              <div className="space-y-2">
-                <Label>Namespace</Label>
-                <input
-                  type="text"
-                  value={namespace}
-                  onChange={(e) => setNamespace(e.target.value)}
-                  placeholder="App\\Models"
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                />
-              </div>
+                  <div className="space-y-2">
+                    <Label>Namespace</Label>
+                    <input
+                      type="text"
+                      value={namespace}
+                      onChange={(e) => setNamespace(e.target.value)}
+                      placeholder="App\\Models"
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    />
+                  </div>
 
-              <div className="space-y-2">
-                <Label>Directory Structure</Label>
-                <Select value={directoryStructure} onValueChange={(v) => setDirectoryStructure(v as any)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="flat">Flat (all files in root)</SelectItem>
-                    <SelectItem value="flat-by-type">Flat by Type (Enum/, ValueObject/, Entity/)</SelectItem>
-                    <SelectItem value="bounded-context">By Bounded Context</SelectItem>
-                    <SelectItem value="bounded-context-by-type">By Bounded Context + Type</SelectItem>
-                    <SelectItem value="aggregate">By Bounded Context / Aggregate</SelectItem>
-                    <SelectItem value="aggregate-by-type">By Bounded Context / Aggregate + Type</SelectItem>
-                    <SelectItem value="psr-4">PSR-4 (with namespace structure)</SelectItem>
-                    <SelectItem value="psr-4-by-type">PSR-4 + Type folders</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  {directoryStructure === 'flat' && 'All files in a single directory'}
-                  {directoryStructure === 'flat-by-type' && 'Files grouped by type (Enum/, ValueObject/, Entity/) in root'}
-                  {directoryStructure === 'bounded-context' && 'Files organized by bounded context folders'}
-                  {directoryStructure === 'bounded-context-by-type' && 'Files organized by bounded context, then by type'}
-                  {directoryStructure === 'aggregate' && 'Files organized by bounded context and aggregate folders'}
-                  {directoryStructure === 'aggregate-by-type' && 'Files organized by bounded context/aggregate, then by type'}
-                  {directoryStructure === 'psr-4' && 'PSR-4 structure with namespace-based directories and namespaces'}
-                  {directoryStructure === 'psr-4-by-type' && 'PSR-4 structure with type folders (Enum/, ValueObject/, Entity/)'}
-                </p>
-              </div>
+                  <div className="space-y-2">
+                    <Label>Directory Structure</Label>
+                    <Select value={directoryStructure} onValueChange={(v) => setDirectoryStructure(v as any)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="flat">Flat (all files in root)</SelectItem>
+                        <SelectItem value="flat-by-type">Flat by Type (Enum/, ValueObject/, Entity/)</SelectItem>
+                        <SelectItem value="bounded-context">By Bounded Context</SelectItem>
+                        <SelectItem value="bounded-context-by-type">By Bounded Context + Type</SelectItem>
+                        <SelectItem value="aggregate">By Bounded Context / Aggregate</SelectItem>
+                        <SelectItem value="aggregate-by-type">By Bounded Context / Aggregate + Type</SelectItem>
+                        <SelectItem value="psr-4">PSR-4 (with namespace structure)</SelectItem>
+                        <SelectItem value="psr-4-by-type">PSR-4 + Type folders</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {directoryStructure === 'flat' && 'All files in a single directory'}
+                      {directoryStructure === 'flat-by-type' && 'Files grouped by type (Enum/, ValueObject/, Entity/) in root'}
+                      {directoryStructure === 'bounded-context' && 'Files organized by bounded context folders'}
+                      {directoryStructure === 'bounded-context-by-type' && 'Files organized by bounded context, then by type'}
+                      {directoryStructure === 'aggregate' && 'Files organized by bounded context and aggregate folders'}
+                      {directoryStructure === 'aggregate-by-type' && 'Files organized by bounded context/aggregate, then by type'}
+                      {directoryStructure === 'psr-4' && 'PSR-4 structure with namespace-based directories and namespaces'}
+                      {directoryStructure === 'psr-4-by-type' && 'PSR-4 structure with type folders (Enum/, ValueObject/, Entity/)'}
+                    </p>
+                  </div>
 
-              <div className="space-y-2">
-                <Label>Constructor</Label>
-                <Select
-                  value={constructorType}
-                  onValueChange={(v) => {
-                    setConstructorType(v as 'none' | 'required' | 'all');
-                    // Reset property promotion when constructor is disabled
-                    if (v === 'none') {
-                      setConstructorPropertyPromotion(false);
-                    }
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No constructor</SelectItem>
-                    <SelectItem value="required">Constructor with only required properties (Non-nullable)</SelectItem>
-                    <SelectItem value="all">Constructor with all properties</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {constructorType !== 'none' && (
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="property-promotion"
-                    checked={constructorPropertyPromotion}
-                    onCheckedChange={(checked) => setConstructorPropertyPromotion(checked === true)}
-                  />
-                  <Label htmlFor="property-promotion" className="cursor-pointer">
-                    Constructor property promotion
-                  </Label>
                 </div>
-              )}
+              </div>
 
-              {framework === 'doctrine' && (
-                <>
+              {/* Divider */}
+              <div className="border-t border-border" />
+
+              {/* Class Structure Section */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold">Class Structure</h3>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Constructor</Label>
+                    <Select
+                      value={constructorType}
+                      onValueChange={(v) => {
+                        setConstructorType(v as 'none' | 'required' | 'all');
+                        // Reset property promotion when constructor is disabled
+                        if (v === 'none') {
+                          setConstructorPropertyPromotion(false);
+                        }
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No constructor</SelectItem>
+                        <SelectItem value="required">Constructor with only required properties (Non-nullable)</SelectItem>
+                        <SelectItem value="all">Constructor with all properties</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {constructorType !== 'none' && (
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="property-promotion"
+                        checked={constructorPropertyPromotion}
+                        onCheckedChange={(checked) => setConstructorPropertyPromotion(checked === true)}
+                      />
+                      <Label htmlFor="property-promotion" className="cursor-pointer">
+                        Constructor property promotion
+                      </Label>
+                    </div>
+                  )}
+
                   <div className="flex items-center space-x-2">
                     <Checkbox
-                      id="doctrine-attributes"
-                      checked={doctrineAttributes}
-                      onCheckedChange={(checked) => setDoctrineAttributes(checked === true)}
+                      id="public-props"
+                      checked={publicProperties}
+                      onCheckedChange={(checked) => setPublicProperties(checked === true)}
                     />
-                    <Label htmlFor="doctrine-attributes" className="cursor-pointer">
-                      Add Doctrine attributes (#[Entity], #[Column], etc.)
+                    <Label htmlFor="public-props" className="cursor-pointer">
+                      Public properties (default: private)
                     </Label>
                   </div>
+
                   <div className="flex items-center space-x-2">
                     <Checkbox
-                      id="doctrine-docstrings"
-                      checked={doctrineCollectionDocstrings}
-                      onCheckedChange={(checked) => setDoctrineCollectionDocstrings(checked === true)}
+                      id="getters"
+                      checked={addGetters}
+                      onCheckedChange={(checked) => setAddGetters(checked === true)}
                     />
-                    <Label htmlFor="doctrine-docstrings" className="cursor-pointer">
-                      Add Collection docstrings (Collection&lt;array-key, Entity&gt;)
+                    <Label htmlFor="getters" className="cursor-pointer">
+                      Add getters
                     </Label>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="setters"
+                      checked={addSetters}
+                      onCheckedChange={(checked) => setAddSetters(checked === true)}
+                    />
+                    <Label htmlFor="setters" className="cursor-pointer">
+                      Add setters
+                    </Label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Doctrine Settings Section */}
+              {framework === 'doctrine' && (
+                <>
+                  <div className="border-t border-border" />
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold">Doctrine Settings</h3>
+                    <div className="space-y-4">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="doctrine-attributes"
+                          checked={doctrineAttributes}
+                          onCheckedChange={(checked) => setDoctrineAttributes(checked === true)}
+                        />
+                        <Label htmlFor="doctrine-attributes" className="cursor-pointer">
+                          Add Doctrine attributes (#[Entity], #[Column], etc.)
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="doctrine-docstrings"
+                          checked={doctrineCollectionDocstrings}
+                          onCheckedChange={(checked) => setDoctrineCollectionDocstrings(checked === true)}
+                        />
+                        <Label htmlFor="doctrine-docstrings" className="cursor-pointer">
+                          Add Collection docstrings (Collection&lt;array-key, Entity&gt;)
+                        </Label>
+                      </div>
+                    </div>
                   </div>
                 </>
               )}
-
-              <div className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="public-props"
-                    checked={publicProperties}
-                    onCheckedChange={(checked) => setPublicProperties(checked === true)}
-                  />
-                  <Label htmlFor="public-props" className="cursor-pointer">
-                    Public properties (default: private)
-                  </Label>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="getters"
-                    checked={addGetters}
-                    onCheckedChange={(checked) => setAddGetters(checked === true)}
-                  />
-                  <Label htmlFor="getters" className="cursor-pointer">
-                    Add getters
-                  </Label>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="setters"
-                    checked={addSetters}
-                    onCheckedChange={(checked) => setAddSetters(checked === true)}
-                  />
-                  <Label htmlFor="setters" className="cursor-pointer">
-                    Add setters
-                  </Label>
-                </div>
-              </div>
 
               <Button onClick={handleGenerate} className="w-full" size="lg">
                 Generate PHP Code
@@ -545,7 +567,7 @@ export default function Home() {
 
         {/* Output Section */}
         {phpFiles.length > 0 && (
-          <Card ref={outputRef}>
+          <Card ref={outputRef} className="overflow-hidden">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Generated PHP Files ({phpFiles.length})</CardTitle>
@@ -557,124 +579,93 @@ export default function Home() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Select File</Label>
-                <Popover open={outputOpen} onOpenChange={setOutputOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      role="combobox"
-                      aria-expanded={outputOpen}
-                      className="w-full justify-between"
-                    >
-                      {selectedPhpFile
-                        ? (phpFiles.find(f => f.filename === selectedPhpFile)?.path || selectedPhpFile)
-                        : 'Select a file...'}
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                    <Command>
-                      <CommandInput placeholder="Search files..." />
-                      <CommandList>
-                        <CommandEmpty>No file found.</CommandEmpty>
-                        <CommandGroup>
-                          {phpFiles.map((file) => (
-                            <CommandItem
-                              key={file.filename}
-                              value={file.filename}
-                              onSelect={() => {
-                                setSelectedPhpFile(file.filename);
-                                setOutputOpen(false);
-                              }}
-                            >
-                              <Check
-                                className={cn(
-                                  'mr-2 h-4 w-4',
-                                  selectedPhpFile === file.filename ? 'opacity-100' : 'opacity-0'
-                                )}
-                              />
-                              <div className="flex items-center gap-2">
-                                <span>
-                                  {file.type === 'enum' && '📋'}
-                                  {file.type === 'valueobject' && '📦'}
-                                  {file.type === 'entity' && '🏗️'}
-                                </span>
-                                <span>{file.path !== file.filename ? file.path : file.filename}</span>
-                              </div>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-              </div>
-              
-              {selectedPhpFile && (() => {
-                const file = phpFiles.find(f => f.filename === selectedPhpFile);
-                if (!file) return null;
-                
-                return (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-muted-foreground">
-                          {file.type === 'enum' && '📋 Enum'}
-                          {file.type === 'valueobject' && '📦 Value Object'}
-                          {file.type === 'entity' && '🏗️ Entity'}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {file.path !== file.filename && (
-                            <span className="text-muted-foreground/70">{file.path} • </span>
-                          )}
-                          {file.content.length} characters
-                        </span>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          onClick={() => handleCopyToClipboard(file)}
-                          variant="ghost"
-                          size="sm"
-                          title="Copy to clipboard"
-                        >
-                          {copiedFile === file.filename ? (
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                          ) : (
-                            <Copy className="h-4 w-4" />
-                          )}
-                        </Button>
-                        <Button
-                          onClick={() => handleDownloadFile(file)}
-                          variant="ghost"
-                          size="sm"
-                          title="Download file"
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="overflow-x-auto rounded-md border">
-                      <SyntaxHighlighter
-                        language="php"
-                        style={theme === 'dark' ? tomorrow : oneLight}
-                        customStyle={{
-                          margin: 0,
-                          borderRadius: '0.375rem',
-                          fontSize: '0.875rem',
-                          lineHeight: '1.5',
-                          padding: '1rem',
-                        }}
-                        showLineNumbers={true}
-                        wrapLines={true}
-                      >
-                        {file.content}
-                      </SyntaxHighlighter>
-                    </div>
+            <CardContent className="p-0">
+              <div className="flex h-[600px] border-t">
+                {/* File Explorer Sidebar */}
+                <div className="w-64 border-r bg-muted/30 flex flex-col">
+                  <div className="p-3 border-b">
+                    <Label className="text-xs font-semibold text-muted-foreground uppercase">Files</Label>
                   </div>
-                );
-              })()}
+                  <div className="flex-1 overflow-hidden">
+                    <FileExplorer
+                      files={phpFiles}
+                      selectedFile={selectedPhpFile}
+                      onFileSelect={setSelectedPhpFile}
+                    />
+                  </div>
+                </div>
+
+                {/* Code Viewer */}
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  {selectedPhpFile && (() => {
+                    const file = phpFiles.find(f => f.filename === selectedPhpFile);
+                    if (!file) return null;
+                    
+                    return (
+                      <>
+                        <div className="flex items-center justify-between p-3 border-b bg-muted/30">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm">
+                              {file.type === 'enum' && '📋'}
+                              {file.type === 'valueobject' && '📦'}
+                              {file.type === 'entity' && '🏗️'}
+                            </span>
+                            <span className="text-sm font-medium">{file.path}</span>
+                            <span className="text-xs text-muted-foreground">
+                              ({file.content.length} characters)
+                            </span>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={() => handleCopyToClipboard(file)}
+                              variant="ghost"
+                              size="sm"
+                              title="Copy to clipboard"
+                            >
+                              {copiedFile === file.filename ? (
+                                <CheckCircle className="h-4 w-4 text-green-600" />
+                              ) : (
+                                <Copy className="h-4 w-4" />
+                              )}
+                            </Button>
+                            <Button
+                              onClick={() => handleDownloadFile(file)}
+                              variant="ghost"
+                              size="sm"
+                              title="Download file"
+                            >
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="flex-1 overflow-auto">
+                          <SyntaxHighlighter
+                            language="php"
+                            style={theme === 'dark' ? tomorrow : oneLight}
+                            customStyle={{
+                              margin: 0,
+                              borderRadius: 0,
+                              fontSize: '0.875rem',
+                              lineHeight: '1.5',
+                              padding: '1rem',
+                              height: '100%',
+                            }}
+                            showLineNumbers={true}
+                            wrapLines={true}
+                          >
+                            {file.content}
+                          </SyntaxHighlighter>
+                        </div>
+                      </>
+                    );
+                  })()}
+                  {!selectedPhpFile && (
+                    <div className="flex-1 flex items-center justify-center text-muted-foreground">
+                      Select a file from the explorer to view its content
+                    </div>
+                  )}
+                </div>
+              </div>
             </CardContent>
           </Card>
         )}
