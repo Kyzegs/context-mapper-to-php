@@ -45,6 +45,8 @@ interface StoredSettings {
   doctrineCollectionDocstrings: boolean;
   doctrineAttributes?: boolean;
   directoryStructure?: 'flat' | 'bounded-context' | 'aggregate' | 'psr-4' | 'flat-by-type' | 'bounded-context-by-type' | 'aggregate-by-type' | 'psr-4-by-type';
+  phpVersion?: '8.1' | '8.2' | '8.3' | '8.4';
+  readonlyValueObjects?: boolean;
   cmlContent?: string;
   selectedFile?: string;
 }
@@ -64,6 +66,8 @@ export default function Home() {
   const [doctrineCollectionDocstrings, setDoctrineCollectionDocstrings] = useState(false);
   const [doctrineAttributes, setDoctrineAttributes] = useState(true);
   const [directoryStructure, setDirectoryStructure] = useState<'flat' | 'bounded-context' | 'aggregate' | 'psr-4' | 'flat-by-type' | 'bounded-context-by-type' | 'aggregate-by-type' | 'psr-4-by-type'>('flat');
+  const [phpVersion, setPhpVersion] = useState<'8.1' | '8.2' | '8.3' | '8.4'>('8.1');
+  const [readonlyValueObjects, setReadonlyValueObjects] = useState(false);
   const [phpFiles, setPhpFiles] = useState<GeneratedFile[]>([]);
   const [selectedPhpFile, setSelectedPhpFile] = useState<string>('');
   const [outputOpen, setOutputOpen] = useState(false);
@@ -89,6 +93,8 @@ export default function Home() {
         setDoctrineCollectionDocstrings(settings.doctrineCollectionDocstrings ?? false);
         setDoctrineAttributes(settings.doctrineAttributes ?? true);
         setDirectoryStructure(settings.directoryStructure || 'flat');
+        setPhpVersion(settings.phpVersion || '8.1');
+        setReadonlyValueObjects(settings.readonlyValueObjects ?? false);
         
         // Note: selectedFile and cmlContent are intentionally not persisted
       }
@@ -115,6 +121,8 @@ export default function Home() {
         doctrineCollectionDocstrings,
         doctrineAttributes,
         directoryStructure,
+        phpVersion,
+        readonlyValueObjects,
         // Note: cmlContent and selectedFile are intentionally not persisted
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
@@ -132,6 +140,8 @@ export default function Home() {
     doctrineCollectionDocstrings,
     doctrineAttributes,
     directoryStructure,
+    phpVersion,
+    readonlyValueObjects,
     isInitialized,
     // Note: cmlContent and selectedFile are intentionally not persisted, so they're not in the dependency array
   ]);
@@ -185,6 +195,8 @@ export default function Home() {
         doctrineCollectionDocstrings: framework === 'doctrine' ? doctrineCollectionDocstrings : false,
         doctrineAttributes: framework === 'doctrine' ? doctrineAttributes : undefined,
         directoryStructure,
+        phpVersion,
+        readonlyValueObjects,
       };
 
       const files = generatePHP(model, config);
@@ -409,6 +421,21 @@ export default function Home() {
                   </div>
 
                   <div className="space-y-2">
+                    <Label>PHP Version</Label>
+                    <Select value={phpVersion} onValueChange={(v) => setPhpVersion(v as any)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="8.1">PHP 8.1</SelectItem>
+                        <SelectItem value="8.2">PHP 8.2</SelectItem>
+                        <SelectItem value="8.3">PHP 8.3</SelectItem>
+                        <SelectItem value="8.4">PHP 8.4</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
                     <Label>Directory Structure</Label>
                     <Select value={directoryStructure} onValueChange={(v) => setDirectoryStructure(v as any)}>
                       <SelectTrigger>
@@ -491,6 +518,23 @@ export default function Home() {
                     />
                     <Label htmlFor="public-props" className="cursor-pointer">
                       Public properties (default: private)
+                    </Label>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="readonly-value-objects"
+                      checked={readonlyValueObjects}
+                      onCheckedChange={(checked) => setReadonlyValueObjects(checked === true)}
+                    />
+                    <Label htmlFor="readonly-value-objects" className="cursor-pointer">
+                      Make Value Objects readonly
+                      {phpVersion && parseFloat(phpVersion) >= 8.2 && (
+                        <span className="text-xs text-muted-foreground ml-1">(readonly class)</span>
+                      )}
+                      {phpVersion && parseFloat(phpVersion) === 8.1 && (
+                        <span className="text-xs text-muted-foreground ml-1">(readonly properties)</span>
+                      )}
                     </Label>
                   </div>
 

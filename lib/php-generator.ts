@@ -27,6 +27,8 @@ export interface GeneratorConfig {
   doctrineCollectionDocstrings?: boolean;
   doctrineAttributes?: boolean;
   directoryStructure?: 'flat' | 'bounded-context' | 'aggregate' | 'psr-4' | 'flat-by-type' | 'bounded-context-by-type' | 'aggregate-by-type' | 'psr-4-by-type';
+  phpVersion?: '8.1' | '8.2' | '8.3' | '8.4';
+  readonlyValueObjects?: boolean;
 }
 
 export interface GeneratedFile {
@@ -208,15 +210,22 @@ function generateValueObject(
   const class_ = ns.addClass(valueObject.name);
   class_.setFinal();
   
+  // Apply readonly class for PHP 8.2+ if enabled
+  if (config.readonlyValueObjects && config.phpVersion && parseFloat(config.phpVersion) >= 8.2) {
+    class_.setReadOnly(true);
+  }
+  
   // Determine which properties will be in constructor
-  const propertiesForConstructor = config.constructorType !== 'none'
-    ? (config.constructorType === 'required'
+  // If readonly is enabled, all properties must be in constructor (they can't be set otherwise)
+  const effectiveConstructorType = config.readonlyValueObjects ? 'all' : config.constructorType;
+  const propertiesForConstructor = effectiveConstructorType !== 'none'
+    ? (effectiveConstructorType === 'required'
         ? valueObject.properties.filter(prop => !prop.nullable)
         : valueObject.properties)
     : [];
   
   const promotedProperties = new Set(
-    config.constructorPropertyPromotion && config.constructorType !== 'none'
+    config.constructorPropertyPromotion && effectiveConstructorType !== 'none'
       ? propertiesForConstructor.map(prop => prop.name)
       : []
   );
@@ -234,15 +243,27 @@ function generateValueObject(
     } else {
       phpProp.setPrivate();
     }
+    
+    // Set type first (required for readonly properties)
     const propType = mapTypeToPHP(prop.type, config);
     phpProp.setType(propType);
     if (prop.nullable) {
       phpProp.setNullable(true);
     }
+    
+    // Apply readonly property for PHP 8.1+ if enabled and not using readonly class (PHP 8.2+)
+    if (config.readonlyValueObjects && config.phpVersion) {
+      const phpVersionNum = parseFloat(config.phpVersion);
+      if (phpVersionNum >= 8.1 && phpVersionNum < 8.2) {
+        // For PHP 8.1, use readonly properties (type must be set first)
+        phpProp.setReadOnly(true);
+      }
+    }
   }
   
   // Add constructor based on config
-  if (config.constructorType !== 'none' && valueObject.properties.length > 0) {
+  // If readonly is enabled, constructor is required (all properties must be set in constructor)
+  if (effectiveConstructorType !== 'none' && valueObject.properties.length > 0) {
     const constructor = class_.addMethod('__construct');
     constructor.setPublic();
     
@@ -262,6 +283,15 @@ function generateValueObject(
           param.setPublic();
         } else {
           param.setPrivate();
+        }
+        // Apply readonly to promoted parameter for PHP 8.1+ if enabled and not using readonly class (PHP 8.2+)
+        // Type must be set before readonly (readonly properties require a type)
+        if (config.readonlyValueObjects && config.phpVersion) {
+          const phpVersionNum = parseFloat(config.phpVersion);
+          if (phpVersionNum >= 8.1 && phpVersionNum < 8.2) {
+            // For PHP 8.1, use readonly on promoted parameters
+            param.setReadOnly(true);
+          }
         }
         // Add collection docstring if enabled and it's a collection
         if (config.doctrineCollectionDocstrings && prop.isCollection && config.framework === 'doctrine') {
@@ -300,7 +330,8 @@ function generateValueObject(
       getter.setBody(`return $this->${prop.name};`);
     }
     
-    if (config.addSetters) {
+    // Skip setters if value object is readonly (readonly objects shouldn't have setters)
+    if (config.addSetters && !config.readonlyValueObjects) {
       const setter = class_.addMethod('set' + capitalize(prop.name));
       setter.setPublic();
       const paramType = mapTypeToPHP(prop.type, config);
