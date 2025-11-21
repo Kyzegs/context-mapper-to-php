@@ -114,9 +114,9 @@ function TreeNode({
         style={{ paddingLeft: `${level * 1 + 0.5}rem` }}
         onClick={() => onFileSelect(node.file!.filename)}
       >
-        <span className="text-xs">{fileIcon}</span>
-        <File className="h-4 w-4 text-muted-foreground" />
-        <span className="truncate">{node.name}</span>
+        <span className="text-xs flex-shrink-0 w-4 h-4 flex items-center justify-center">{fileIcon}</span>
+        <File className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+        <span className="truncate flex-1 min-w-0">{node.name}</span>
       </div>
     );
   }

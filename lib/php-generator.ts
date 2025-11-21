@@ -132,7 +132,9 @@ function getDirectoryPath(
 }
 
 function buildFilePath(basePath: string, typeFolder: string, filename: string): string {
-  const parts = [basePath, typeFolder, filename].filter(Boolean);
+  // Remove trailing slashes from typeFolder and filter out empty parts
+  const cleanTypeFolder = typeFolder.replace(/\/+$/, '');
+  const parts = [basePath, cleanTypeFolder, filename].filter(Boolean);
   return parts.join('/');
 }
 
@@ -316,7 +318,9 @@ function generateValueObject(
     }
   }
   
-  return file.toString();
+  // Use Printer to ensure proper formatting with correct spacing between methods
+  const printer = new Printer();
+  return printer.printFile(file);
 }
 
 function generateEntity(
@@ -574,7 +578,13 @@ function generateEntity(
     }
   }
   
-  return file.toString();
+  // Use Printer to ensure proper formatting with correct spacing between methods
+  const printer = new Printer();
+  printer.wrapLength = 120; // Allow longer lines for better readability
+  printer.linesBetweenMethods = 1; // Single line between methods (PSR-12 standard)
+  printer.linesBetweenProperties = 0; // No extra lines between properties
+  printer.linesBetweenUseTypes = 1; // Single line between use statements
+  return printer.printFile(file);
 }
 
 function mapTypeToPHP(

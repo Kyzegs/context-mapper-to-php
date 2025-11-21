@@ -20,6 +20,7 @@ import { useTheme } from 'next-themes';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import type { GeneratedFile } from '@/lib/php-generator';
+import { toast } from 'sonner';
 
 const EXAMPLE_FILES = [
   'merchant-management-context.cml',
@@ -66,7 +67,6 @@ export default function Home() {
   const [phpFiles, setPhpFiles] = useState<GeneratedFile[]>([]);
   const [selectedPhpFile, setSelectedPhpFile] = useState<string>('');
   const [outputOpen, setOutputOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const outputRef = useRef<HTMLDivElement>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [copiedFile, setCopiedFile] = useState<string | null>(null);
@@ -143,9 +143,10 @@ export default function Home() {
       const content = await response.text();
       setCmlContent(content);
       setSelectedFile(filename);
-      setError(null);
     } catch (err) {
-      setError(`Failed to load ${filename}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      toast.error(`Failed to load ${filename}`, {
+        description: err instanceof Error ? err.message : 'Unknown error',
+      });
     }
   };
 
@@ -158,19 +159,17 @@ export default function Home() {
       const content = e.target?.result as string;
       setCmlContent(content);
       setSelectedFile(file.name);
-      setError(null);
     };
     reader.onerror = () => {
-      setError('Failed to read file');
+      toast.error('Failed to read file');
     };
     reader.readAsText(file);
   };
 
   const handleGenerate = () => {
     try {
-      setError(null);
       if (!cmlContent.trim()) {
-        setError('Please provide CML content');
+        toast.error('Please provide CML content');
         return;
       }
 
@@ -200,7 +199,9 @@ export default function Home() {
         outputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 100);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate PHP code');
+      toast.error('Failed to generate PHP code', {
+        description: err instanceof Error ? err.message : 'Unknown error',
+      });
       setPhpFiles([]);
     }
   };
@@ -240,7 +241,7 @@ export default function Home() {
           setCopiedFile(null);
         }, 2000);
       } catch (fallbackErr) {
-        setError('Failed to copy to clipboard');
+        toast.error('Failed to copy to clipboard');
       }
       document.body.removeChild(textArea);
     }
@@ -556,15 +557,6 @@ export default function Home() {
           </Card>
         </div>
 
-        {/* Error Display */}
-        {error && (
-          <Card className="border-destructive">
-            <CardContent className="pt-6">
-              <p className="text-sm text-destructive">{error}</p>
-            </CardContent>
-          </Card>
-        )}
-
         {/* Output Section */}
         {phpFiles.length > 0 && (
           <Card ref={outputRef} className="overflow-hidden">
@@ -610,7 +602,25 @@ export default function Home() {
                               {file.type === 'valueobject' && '📦'}
                               {file.type === 'entity' && '🏗️'}
                             </span>
-                            <span className="text-sm font-medium">{file.path}</span>
+                            <nav className="flex items-center gap-1 text-sm" aria-label="Breadcrumb">
+                              {(() => {
+                                const pathParts = file.path.split('/').filter(p => p && p.trim() !== '');
+                                if (pathParts.length <= 1) {
+                                  return <span className="font-medium">{file.filename}</span>;
+                                }
+                                return (
+                                  <>
+                                    {pathParts.slice(0, -1).map((part, idx) => (
+                                      <span key={idx} className="flex items-center gap-1">
+                                        <span className="text-muted-foreground hover:text-foreground">{part}</span>
+                                        <span className="text-muted-foreground/50">/</span>
+                                      </span>
+                                    ))}
+                                    <span className="font-medium">{pathParts[pathParts.length - 1]}</span>
+                                  </>
+                                );
+                              })()}
+                            </nav>
                             <span className="text-xs text-muted-foreground">
                               ({file.content.length} characters)
                             </span>
