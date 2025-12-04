@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { parseCML } from '@/lib/cml-parser';
-import { generatePHP, type GeneratorConfig } from '@/lib/php-generator';
+import { generatePHP, type GeneratorConfig, type Framework } from '@/lib/php-generator';
 import { Download, FileText, Settings, FolderDown, Check, ChevronsUpDown, Copy, CheckCircle } from 'lucide-react';
 import { FileExplorer } from '@/components/file-explorer';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -30,7 +30,7 @@ const EXAMPLE_FILES = [
 const STORAGE_KEY = 'cml-to-php-settings';
 
 interface StoredSettings {
-  framework: 'laravel' | 'doctrine' | 'plain';
+  framework: Framework;
   publicProperties: boolean;
   addGetters: boolean;
   addSetters: boolean;
@@ -53,7 +53,7 @@ export default function Home() {
   const [cmlContent, setCmlContent] = useState('');
   const [selectedFile, setSelectedFile] = useState<string>('');
   const [open, setOpen] = useState(false);
-  const [framework, setFramework] = useState<'laravel' | 'doctrine' | 'plain'>('plain');
+  const [framework, setFramework] = useState<Framework>('plain');
   const [publicProperties, setPublicProperties] = useState(false);
   const [addGetters, setAddGetters] = useState(true);
   const [addSetters, setAddSetters] = useState(true);
@@ -69,7 +69,6 @@ export default function Home() {
   const [readonlyValueObjects, setReadonlyValueObjects] = useState(false);
   const [phpFiles, setPhpFiles] = useState<GeneratedFile[]>([]);
   const [selectedPhpFile, setSelectedPhpFile] = useState<string>('');
-  const [outputOpen, setOutputOpen] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [copiedFile, setCopiedFile] = useState<string | null>(null);
@@ -142,7 +141,9 @@ export default function Home() {
     constructorPropertyPromotion,
     doctrineCollectionDocstrings,
     doctrineAttributes,
+    arrayDocstrings,
     directoryStructure,
+    groupByType,
     phpVersion,
     readonlyValueObjects,
     isInitialized,
@@ -243,7 +244,7 @@ export default function Home() {
       setTimeout(() => {
         setCopiedFile(null);
       }, 2000);
-    } catch (err) {
+    } catch {
       // Fallback for browsers that don't support clipboard API
       const textArea = document.createElement('textarea');
       textArea.value = file.content;
@@ -257,7 +258,7 @@ export default function Home() {
         setTimeout(() => {
           setCopiedFile(null);
         }, 2000);
-      } catch (fallbackErr) {
+      } catch {
         toast.error('Failed to copy to clipboard');
       }
       document.body.removeChild(textArea);
@@ -402,7 +403,7 @@ export default function Home() {
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label>Framework</Label>
-                    <Select value={framework} onValueChange={(v) => setFramework(v as any)}>
+                    <Select value={framework} onValueChange={(v) => setFramework(v as Framework)}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -427,7 +428,7 @@ export default function Home() {
 
                   <div className="space-y-2">
                     <Label>PHP Version</Label>
-                    <Select value={phpVersion} onValueChange={(v) => setPhpVersion(v as any)}>
+                    <Select value={phpVersion} onValueChange={(v) => setPhpVersion(v as '8.1' | '8.2' | '8.3' | '8.4')}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -442,7 +443,7 @@ export default function Home() {
 
                   <div className="space-y-2">
                     <Label>Directory Structure</Label>
-                    <Select value={directoryStructure} onValueChange={(v) => setDirectoryStructure(v as any)}>
+                    <Select value={directoryStructure} onValueChange={(v) => setDirectoryStructure(v as 'flat' | 'bounded-context' | 'aggregate' | 'psr-4')}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>

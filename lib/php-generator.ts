@@ -1,12 +1,7 @@
 import {
-  ClassType,
   PhpFile,
-  PhpNamespace,
   Property,
-  Method,
-  EnumType,
   PromotedParameter,
-  Parameter,
   Printer,
 } from 'js-php-generator';
 import type {
@@ -17,8 +12,10 @@ import type {
   CMLProperty,
 } from './cml-parser';
 
+export type Framework = 'laravel' | 'doctrine' | 'plain';
+
 export interface GeneratorConfig {
-  framework: 'laravel' | 'doctrine' | 'plain';
+  framework: Framework;
   publicProperties: boolean;
   addGetters: boolean;
   addSetters: boolean;
@@ -162,7 +159,7 @@ function generateEnum(
     namespace = `${namespace}\\${boundedContextName}`;
   }
   
-  const ns = file.addNamespace(namespace);
+  file.addNamespace(namespace);
   
   // Add enum directly to file (not namespace) for proper rendering
   const enumType = file.addEnum(enumDef.name);
@@ -193,9 +190,9 @@ function generateValueObject(
   file.setStrictTypes();
   
   const namespace = buildNamespace(config, boundedContextName, aggregateName);
-  const ns = file.addNamespace(namespace);
+  file.addNamespace(namespace);
   
-  const class_ = ns.addClass(valueObject.name);
+  const class_ = file.addNamespace(namespace).addClass(valueObject.name);
   class_.setFinal();
   
   // Apply readonly class for PHP 8.2+ if enabled
@@ -312,9 +309,9 @@ function generateEntity(
   file.setStrictTypes();
   
   const namespace = buildNamespace(config, boundedContextName, aggregateName);
-  const ns = file.addNamespace(namespace);
+  file.addNamespace(namespace);
   
-  const class_ = ns.addClass(entity.name);
+  const class_ = file.addNamespace(namespace).addClass(entity.name);
   
   // Framework-specific setup
   if (config.framework === 'laravel') {

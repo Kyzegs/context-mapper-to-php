@@ -197,7 +197,10 @@ export function FileExplorer({ files, selectedFile, onFileSelect }: FileExplorer
           allFolders.add(parts.slice(0, i + 1).join('/'));
         }
       }
-      setExpandedFolders(allFolders);
+      // Use setTimeout to avoid synchronous setState in effect
+      setTimeout(() => {
+        setExpandedFolders(allFolders);
+      }, 0);
     }
   }, [files]);
 

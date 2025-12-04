@@ -143,7 +143,7 @@ export function parseCML(content: string): CMLModel {
     // Enum values - must be checked BEFORE property parsing to avoid conflicts
     if (line && currentEnum) {
       // Remove comments
-      let cleanLine = line.replace(/\/\/.*$/, '').trim();
+      const cleanLine = line.replace(/\/\/.*$/, '').trim();
       if (cleanLine && cleanLine !== '}' && !cleanLine.startsWith('enum ')) {
         if (cleanLine.includes(',')) {
           // Handle comma-separated values
