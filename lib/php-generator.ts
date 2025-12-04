@@ -26,7 +26,8 @@ export interface GeneratorConfig {
   constructorPropertyPromotion: boolean;
   doctrineCollectionDocstrings?: boolean;
   doctrineAttributes?: boolean;
-  directoryStructure?: 'flat' | 'bounded-context' | 'aggregate' | 'psr-4' | 'flat-by-type' | 'bounded-context-by-type' | 'aggregate-by-type' | 'psr-4-by-type';
+  directoryStructure?: 'flat' | 'bounded-context' | 'aggregate' | 'psr-4';
+  groupByType?: boolean;
   phpVersion?: '8.1' | '8.2' | '8.3' | '8.4';
   readonlyValueObjects?: boolean;
 }
@@ -44,19 +45,15 @@ export function generatePHP(
 ): GeneratedFile[] {
   const files: GeneratedFile[] = [];
   const directoryStructure = config.directoryStructure || 'flat';
+  const groupByType = config.groupByType || false;
   
   for (const boundedContext of model.boundedContexts) {
     for (const aggregate of boundedContext.aggregates) {
-      // Determine if we should group by type
-      const groupByType = directoryStructure?.endsWith('-by-type') || false;
-      // Get base structure (without -by-type suffix)
-      const baseStructure = directoryStructure?.replace('-by-type', '') as 'flat' | 'bounded-context' | 'aggregate' | 'psr-4' | undefined || 'flat';
-      
       // Determine directory path based on structure option
       const directoryPath = getDirectoryPath(
         boundedContext.name,
         aggregate.name,
-        baseStructure
+        directoryStructure
       );
       
       // Generate enums
@@ -154,13 +151,12 @@ function generateEnum(
   file.setStrictTypes();
   
   let namespace = config.namespace || 'App\\Models';
-  // Get base structure (without -by-type suffix) for namespace logic
-  const baseStructure = config.directoryStructure?.replace('-by-type', '') as 'flat' | 'bounded-context' | 'aggregate' | 'psr-4' | undefined || 'flat';
+  const directoryStructure = config.directoryStructure || 'flat';
   
   // For PSR-4 and aggregate structures, append bounded context and aggregate to namespace
-  if ((baseStructure === 'psr-4' || baseStructure === 'aggregate') && boundedContextName && aggregateName) {
+  if ((directoryStructure === 'psr-4' || directoryStructure === 'aggregate') && boundedContextName && aggregateName) {
     namespace = `${namespace}\\${boundedContextName}\\${aggregateName}`;
-  } else if (baseStructure === 'bounded-context' && boundedContextName) {
+  } else if (directoryStructure === 'bounded-context' && boundedContextName) {
     namespace = `${namespace}\\${boundedContextName}`;
   }
   
@@ -195,13 +191,12 @@ function generateValueObject(
   file.setStrictTypes();
   
   let namespace = config.namespace || 'App\\Models';
-  // Get base structure (without -by-type suffix) for namespace logic
-  const baseStructure = config.directoryStructure?.replace('-by-type', '') as 'flat' | 'bounded-context' | 'aggregate' | 'psr-4' | undefined || 'flat';
+  const directoryStructure = config.directoryStructure || 'flat';
   
   // For PSR-4 and aggregate structures, append bounded context and aggregate to namespace
-  if ((baseStructure === 'psr-4' || baseStructure === 'aggregate') && boundedContextName && aggregateName) {
+  if ((directoryStructure === 'psr-4' || directoryStructure === 'aggregate') && boundedContextName && aggregateName) {
     namespace = `${namespace}\\${boundedContextName}\\${aggregateName}`;
-  } else if (baseStructure === 'bounded-context' && boundedContextName) {
+  } else if (directoryStructure === 'bounded-context' && boundedContextName) {
     namespace = `${namespace}\\${boundedContextName}`;
   }
   
@@ -365,13 +360,12 @@ function generateEntity(
   file.setStrictTypes();
   
   let namespace = config.namespace || 'App\\Models';
-  // Get base structure (without -by-type suffix) for namespace logic
-  const baseStructure = config.directoryStructure?.replace('-by-type', '') as 'flat' | 'bounded-context' | 'aggregate' | 'psr-4' | undefined || 'flat';
+  const directoryStructure = config.directoryStructure || 'flat';
   
   // For PSR-4 and aggregate structures, append bounded context and aggregate to namespace
-  if ((baseStructure === 'psr-4' || baseStructure === 'aggregate') && boundedContextName && aggregateName) {
+  if ((directoryStructure === 'psr-4' || directoryStructure === 'aggregate') && boundedContextName && aggregateName) {
     namespace = `${namespace}\\${boundedContextName}\\${aggregateName}`;
-  } else if (baseStructure === 'bounded-context' && boundedContextName) {
+  } else if (directoryStructure === 'bounded-context' && boundedContextName) {
     namespace = `${namespace}\\${boundedContextName}`;
   }
   
