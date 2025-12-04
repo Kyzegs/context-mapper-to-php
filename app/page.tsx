@@ -23,13 +23,8 @@ import type { GeneratedFile } from '@/lib/php-generator';
 import { toast } from 'sonner';
 
 const EXAMPLE_FILES = [
-  'merchant-management-context.cml',
-  'payment-data-context.cml',
-  'chargeback-management-context.cml',
-  'clearing-management-context.cml',
-  'pointofsale-context.cml',
-  'system-data-context.cml',
-  'whitelabel-management-context.cml',
+  'DDD-Sample.cml',
+  'insurance-example-for-JDL-generation.cml',
 ];
 
 const STORAGE_KEY = 'cml-to-php-settings';
