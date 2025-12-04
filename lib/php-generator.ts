@@ -6,6 +6,7 @@ import {
   Method,
   EnumType,
   PromotedParameter,
+  Parameter,
   Printer,
 } from 'js-php-generator';
 import type {
@@ -26,6 +27,7 @@ export interface GeneratorConfig {
   constructorPropertyPromotion: boolean;
   doctrineCollectionDocstrings?: boolean;
   doctrineAttributes?: boolean;
+  arrayDocstrings?: boolean;
   directoryStructure?: 'flat' | 'bounded-context' | 'aggregate' | 'psr-4';
   groupByType?: boolean;
   phpVersion?: '8.1' | '8.2' | '8.3' | '8.4';
@@ -86,7 +88,7 @@ export function generatePHP(
       
       // Generate entities
       for (const entity of aggregate.entities) {
-        const entityFile = generateEntity(entity, aggregate, config, boundedContext.name, aggregate.name);
+        const entityFile = generateEntity(entity, config, boundedContext.name, aggregate.name);
         const filename = `${entity.name}.php`;
         const typeFolder = groupByType ? 'Entity/' : '';
         const fullPath = buildFilePath(directoryPath, typeFolder, filename);
@@ -190,16 +192,7 @@ function generateValueObject(
   const file = new PhpFile();
   file.setStrictTypes();
   
-  let namespace = config.namespace || 'App\\Models';
-  const directoryStructure = config.directoryStructure || 'flat';
-  
-  // For PSR-4 and aggregate structures, append bounded context and aggregate to namespace
-  if ((directoryStructure === 'psr-4' || directoryStructure === 'aggregate') && boundedContextName && aggregateName) {
-    namespace = `${namespace}\\${boundedContextName}\\${aggregateName}`;
-  } else if (directoryStructure === 'bounded-context' && boundedContextName) {
-    namespace = `${namespace}\\${boundedContextName}`;
-  }
-  
+  const namespace = buildNamespace(config, boundedContextName, aggregateName);
   const ns = file.addNamespace(namespace);
   
   const class_ = ns.addClass(valueObject.name);
@@ -233,26 +226,14 @@ function generateValueObject(
     }
     
     const phpProp = class_.addProperty(prop.name);
-    if (config.publicProperties === true) {
-      phpProp.setPublic();
-    } else {
-      phpProp.setPrivate();
-    }
-    
-    // Set type first (required for readonly properties)
-    const propType = mapTypeToPHP(prop.type, config);
-    phpProp.setType(propType);
+    setVisibility(phpProp, config.publicProperties === true);
+    phpProp.setType(mapTypeToPHP(config, prop));
     if (prop.nullable) {
       phpProp.setNullable(true);
     }
-    
-    // Apply readonly property for PHP 8.1+ if enabled and not using readonly class (PHP 8.2+)
-    if (config.readonlyValueObjects && config.phpVersion) {
-      const phpVersionNum = parseFloat(config.phpVersion);
-      if (phpVersionNum >= 8.1 && phpVersionNum < 8.2) {
-        // For PHP 8.1, use readonly properties (type must be set first)
-        phpProp.setReadOnly(true);
-      }
+    addCollectionDocstring(phpProp, prop, 'var', config);
+    if (shouldApplyReadonlyProperty(config)) {
+      phpProp.setReadOnly(true);
     }
   }
   
@@ -264,41 +245,23 @@ function generateValueObject(
     
     let constructorBody = '';
     for (const prop of propertiesForConstructor) {
-      const paramType = mapTypeToPHP(prop.type, config);
+      const param = config.constructorPropertyPromotion
+        ? constructor.addPromotedParameter(prop.name)
+        : constructor.addParameter(prop.name);
+      
+      setupParameter(param, prop, config);
       
       if (config.constructorPropertyPromotion) {
-        // Use promoted parameter
-        const param = constructor.addPromotedParameter(prop.name);
-        param.setType(paramType);
-        if (prop.nullable) {
-          param.setNullable(true);
+        const promotedParam = param as PromotedParameter;
+        setVisibility(promotedParam, config.publicProperties === true);
+        if (shouldApplyReadonlyProperty(config)) {
+          promotedParam.setReadOnly(true);
         }
-        // Set visibility on promoted parameter
-        if (config.publicProperties === true) {
-          param.setPublic();
-        } else {
-          param.setPrivate();
-        }
-        // Apply readonly to promoted parameter for PHP 8.1+ if enabled and not using readonly class (PHP 8.2+)
-        // Type must be set before readonly (readonly properties require a type)
-        if (config.readonlyValueObjects && config.phpVersion) {
-          const phpVersionNum = parseFloat(config.phpVersion);
-          if (phpVersionNum >= 8.1 && phpVersionNum < 8.2) {
-            // For PHP 8.1, use readonly on promoted parameters
-            param.setReadOnly(true);
-          }
-        }
-        // Add collection docstring if enabled and it's a collection
-        if (config.doctrineCollectionDocstrings && prop.isCollection && config.framework === 'doctrine') {
-          param.addComment(`@var \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}>`);
-        }
-      } else {
-        // Regular parameter
-        const param = constructor.addParameter(prop.name);
-        param.setType(paramType);
-        if (prop.nullable) {
-          param.setNullable(true);
-        }
+      }
+      
+      addCollectionDocstring(param, prop, 'var', config);
+      
+      if (!config.constructorPropertyPromotion) {
         constructorBody += `$this->${prop.name} = $${prop.name};\n`;
       }
     }
@@ -313,15 +276,11 @@ function generateValueObject(
     if (config.addGetters) {
       const getter = class_.addMethod('get' + capitalize(prop.name));
       getter.setPublic();
-      const returnType = mapTypeToPHP(prop.type, config);
-      getter.setReturnType(returnType);
+      getter.setReturnType(mapTypeToPHP(config, prop));
       if (prop.nullable) {
         getter.setReturnNullable(true);
       }
-      // Add collection docstring if enabled
-      if (config.doctrineCollectionDocstrings && prop.isCollection && config.framework === 'doctrine') {
-        getter.addComment(`@return \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}>`);
-      }
+      addCollectionDocstring(getter, prop, 'return', config);
       getter.setBody(`return $this->${prop.name};`);
     }
     
@@ -329,16 +288,10 @@ function generateValueObject(
     if (config.addSetters && !config.readonlyValueObjects) {
       const setter = class_.addMethod('set' + capitalize(prop.name));
       setter.setPublic();
-      const paramType = mapTypeToPHP(prop.type, config);
       const param = setter.addParameter(prop.name);
-      param.setType(paramType);
-      if (prop.nullable) {
-        param.setNullable(true);
-      }
+      setupParameter(param, prop, config);
       // Add collection docstring if enabled
-      if (config.doctrineCollectionDocstrings && prop.isCollection && config.framework === 'doctrine') {
-        setter.addComment(`@param \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}> $${prop.name}`);
-      }
+      addCollectionDocstring(setter, prop, 'param', config);
       setter.setReturnType('self');
       setter.setBody(`$this->${prop.name} = $${prop.name};\n\nreturn $this;`);
     }
@@ -351,7 +304,6 @@ function generateValueObject(
 
 function generateEntity(
   entity: CMLEntity,
-  aggregate: { enums: CMLEnum[]; valueObjects: CMLValueObject[] },
   config: GeneratorConfig,
   boundedContextName?: string,
   aggregateName?: string
@@ -359,16 +311,7 @@ function generateEntity(
   const file = new PhpFile();
   file.setStrictTypes();
   
-  let namespace = config.namespace || 'App\\Models';
-  const directoryStructure = config.directoryStructure || 'flat';
-  
-  // For PSR-4 and aggregate structures, append bounded context and aggregate to namespace
-  if ((directoryStructure === 'psr-4' || directoryStructure === 'aggregate') && boundedContextName && aggregateName) {
-    namespace = `${namespace}\\${boundedContextName}\\${aggregateName}`;
-  } else if (directoryStructure === 'bounded-context' && boundedContextName) {
-    namespace = `${namespace}\\${boundedContextName}`;
-  }
-  
+  const namespace = buildNamespace(config, boundedContextName, aggregateName);
   const ns = file.addNamespace(namespace);
   
   const class_ = ns.addClass(entity.name);
@@ -384,12 +327,7 @@ function generateEntity(
   
   // Get properties that should be in constructor (excluding Laravel relations)
   const propertiesForConstructor = config.constructorType !== 'none'
-    ? entity.properties.filter(prop => {
-        if (prop.isRelation && config.framework === 'laravel') {
-          return false;
-        }
-        return true;
-      })
+    ? entity.properties.filter(prop => !(prop.isRelation && config.framework === 'laravel'))
     : [];
   
   // Determine which properties to include in constructor
@@ -417,16 +355,14 @@ function generateEntity(
     }
     
     const phpProp = class_.addProperty(prop.name);
-    if (config.publicProperties === true) {
-      phpProp.setPublic();
-    } else {
-      phpProp.setPrivate();
-    }
-    const phpType = mapTypeToPHP(prop.type, config, prop, aggregate);
+    setVisibility(phpProp, config.publicProperties === true);
+    const phpType = mapTypeToPHP(config, prop);
     phpProp.setType(phpType);
     if (prop.nullable) {
       phpProp.setNullable(true);
     }
+    // Add collection docstring if enabled
+    addCollectionDocstring(phpProp, prop, 'var', config);
     
     // Framework-specific attributes
     if (config.framework === 'laravel') {
@@ -448,9 +384,7 @@ function generateEntity(
             phpProp.setType('Doctrine\\Common\\Collections\\Collection');
             
             // Add collection docstring if enabled
-            if (config.doctrineCollectionDocstrings) {
-              phpProp.addComment(`@var \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}>`);
-            }
+            addCollectionDocstring(phpProp, prop, 'var', config);
           } else {
             phpProp.addAttribute('Doctrine\\ORM\\Mapping\\ManyToOne', [
               `targetEntity: ${prop.type}::class`
@@ -467,9 +401,7 @@ function generateEntity(
         if (prop.isCollection) {
           phpProp.setType('Doctrine\\Common\\Collections\\Collection');
           // Add collection docstring if enabled
-          if (config.doctrineCollectionDocstrings) {
-            phpProp.addComment(`@var \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}>`);
-          }
+          addCollectionDocstring(phpProp, prop, 'var', config);
         }
       }
     }
@@ -493,32 +425,19 @@ function generateEntity(
     
     // Add constructor parameters
     for (const prop of propertiesToInclude) {
-      const paramType = mapTypeToPHP(prop.type, config, prop, aggregate);
+      const param = config.constructorPropertyPromotion
+        ? constructor.addPromotedParameter(prop.name)
+        : constructor.addParameter(prop.name);
+      
+      setupParameter(param, prop, config);
       
       if (config.constructorPropertyPromotion) {
-        // Use promoted parameter
-        const param = constructor.addPromotedParameter(prop.name);
-        param.setType(paramType);
-        if (prop.nullable) {
-          param.setNullable(true);
-        }
-        // Set visibility on promoted parameter
-        if (config.publicProperties === true) {
-          param.setPublic();
-        } else {
-          param.setPrivate();
-        }
-        // Add collection docstring if enabled and it's a collection
-        if (config.doctrineCollectionDocstrings && prop.isCollection && config.framework === 'doctrine') {
-          param.addComment(`@var \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}>`);
-        }
-      } else {
-        // Regular parameter
-        const param = constructor.addParameter(prop.name);
-        param.setType(paramType);
-        if (prop.nullable) {
-          param.setNullable(true);
-        }
+        setVisibility(param as PromotedParameter, config.publicProperties === true);
+      }
+      
+      addCollectionDocstring(param, prop, 'var', config);
+      
+      if (!config.constructorPropertyPromotion) {
         constructorBody += `$this->${prop.name} = $${prop.name};\n`;
       }
     }
@@ -552,31 +471,21 @@ function generateEntity(
     if (config.addGetters) {
       const getter = class_.addMethod('get' + capitalize(prop.name));
       getter.setPublic();
-      const returnType = mapTypeToPHP(prop.type, config, prop, aggregate);
-      getter.setReturnType(returnType);
+      getter.setReturnType(mapTypeToPHP(config, prop));
       if (prop.nullable) {
         getter.setReturnNullable(true);
       }
-      // Add collection docstring if enabled
-      if (config.doctrineCollectionDocstrings && prop.isCollection && config.framework === 'doctrine') {
-        getter.addComment(`@return \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}>`);
-      }
+      addCollectionDocstring(getter, prop, 'return', config);
       getter.setBody(`return $this->${prop.name};`);
     }
     
     if (config.addSetters) {
       const setter = class_.addMethod('set' + capitalize(prop.name));
       setter.setPublic();
-      const paramType = mapTypeToPHP(prop.type, config, prop, aggregate);
       const param = setter.addParameter(prop.name);
-      param.setType(paramType);
-      if (prop.nullable) {
-        param.setNullable(true);
-      }
+      setupParameter(param, prop, config);
       // Add collection docstring if enabled
-      if (config.doctrineCollectionDocstrings && prop.isCollection && config.framework === 'doctrine') {
-        setter.addComment(`@param \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}> $${prop.name}`);
-      }
+      addCollectionDocstring(setter, prop, 'param', config);
       setter.setReturnType('self');
       setter.setBody(`$this->${prop.name} = $${prop.name};\n\nreturn $this;`);
     }
@@ -612,17 +521,88 @@ function generateEntity(
   return printer.printFile(file);
 }
 
-function mapTypeToPHP(
-  type: string,
+function buildNamespace(
   config: GeneratorConfig,
-  prop?: CMLProperty,
-  aggregate?: { enums: CMLEnum[]; valueObjects: CMLValueObject[] }
+  boundedContextName?: string,
+  aggregateName?: string
 ): string {
-  if (!type || type.trim() === '') {
+  let namespace = config.namespace || 'App\\Models';
+  const directoryStructure = config.directoryStructure || 'flat';
+  
+  if ((directoryStructure === 'psr-4' || directoryStructure === 'aggregate') && boundedContextName && aggregateName) {
+    namespace = `${namespace}\\${boundedContextName}\\${aggregateName}`;
+  } else if (directoryStructure === 'bounded-context' && boundedContextName) {
+    namespace = `${namespace}\\${boundedContextName}`;
+  }
+  
+  return namespace;
+}
+
+type Commentable = { addComment: (comment: string) => void };
+
+function addCollectionDocstring(
+  target: Commentable,
+  prop: CMLProperty,
+  docType: 'var' | 'return' | 'param',
+  config: GeneratorConfig
+): void {
+  if (!prop.isCollection) return;
+  
+  if (config.doctrineCollectionDocstrings && config.framework === 'doctrine') {
+    const doc = docType === 'param'
+      ? `@param \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}> $${prop.name}`
+      : docType === 'return'
+      ? `@return \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}>`
+      : `@var \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}>`;
+    target.addComment(doc);
+  } else if (config.arrayDocstrings && config.framework === 'plain') {
+    const doc = docType === 'param'
+      ? `@param array<int, ${prop.type}> $${prop.name}`
+      : docType === 'return'
+      ? `@return array<int, ${prop.type}>`
+      : `@var array<int, ${prop.type}>`;
+    target.addComment(doc);
+  }
+}
+
+function setupParameter(
+  param: { setType: (type: string) => void; setNullable: (nullable: boolean) => void },
+  prop: CMLProperty,
+  config: GeneratorConfig
+): void {
+  param.setType(mapTypeToPHP(config, prop));
+  if (prop.nullable) {
+    param.setNullable(true);
+  }
+}
+
+function shouldApplyReadonlyProperty(config: GeneratorConfig): boolean {
+  return config.readonlyValueObjects === true && 
+         config.phpVersion !== undefined &&
+         parseFloat(config.phpVersion) >= 8.1 && 
+         parseFloat(config.phpVersion) < 8.2;
+}
+
+function setVisibility(
+  target: Property | PromotedParameter,
+  isPublic: boolean
+): void {
+  if (isPublic) {
+    target.setPublic();
+  } else {
+    target.setPrivate();
+  }
+}
+
+function mapTypeToPHP(
+  config: GeneratorConfig,
+  prop: CMLProperty
+): string {
+  if (!prop.type || prop.type.trim() === '') {
     return 'mixed';
   }
   
-  const lowerType = type.toLowerCase();
+  const lowerType = prop.type.toLowerCase();
   
   // Primitive types
   if (lowerType === 'string') return 'string';
@@ -634,7 +614,7 @@ function mapTypeToPHP(
   if (lowerType === 'clob') return 'string';
   
   // Collections
-  if (prop?.isCollection) {
+  if (prop.isCollection) {
     if (config.framework === 'doctrine') {
       return 'Doctrine\\Common\\Collections\\Collection';
     } else if (config.framework === 'laravel') {
@@ -644,7 +624,7 @@ function mapTypeToPHP(
   }
   
   // Relations and custom types
-  return type;
+  return prop.type;
 }
 
 function mapDoctrineType(type: string): string {

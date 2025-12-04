@@ -39,6 +39,7 @@ interface StoredSettings {
   constructorPropertyPromotion: boolean;
   doctrineCollectionDocstrings: boolean;
   doctrineAttributes?: boolean;
+  arrayDocstrings?: boolean;
   directoryStructure?: 'flat' | 'bounded-context' | 'aggregate' | 'psr-4';
   groupByType?: boolean;
   phpVersion?: '8.1' | '8.2' | '8.3' | '8.4';
@@ -61,6 +62,7 @@ export default function Home() {
   const [constructorPropertyPromotion, setConstructorPropertyPromotion] = useState(false);
   const [doctrineCollectionDocstrings, setDoctrineCollectionDocstrings] = useState(false);
   const [doctrineAttributes, setDoctrineAttributes] = useState(true);
+  const [arrayDocstrings, setArrayDocstrings] = useState(false);
   const [directoryStructure, setDirectoryStructure] = useState<'flat' | 'bounded-context' | 'aggregate' | 'psr-4'>('flat');
   const [groupByType, setGroupByType] = useState(false);
   const [phpVersion, setPhpVersion] = useState<'8.1' | '8.2' | '8.3' | '8.4'>('8.1');
@@ -89,6 +91,7 @@ export default function Home() {
         setConstructorPropertyPromotion(settings.constructorPropertyPromotion ?? false);
         setDoctrineCollectionDocstrings(settings.doctrineCollectionDocstrings ?? false);
         setDoctrineAttributes(settings.doctrineAttributes ?? true);
+        setArrayDocstrings(settings.arrayDocstrings ?? false);
         setDirectoryStructure(settings.directoryStructure || 'flat');
         setGroupByType(settings.groupByType ?? false);
         setPhpVersion(settings.phpVersion || '8.1');
@@ -118,6 +121,7 @@ export default function Home() {
         constructorPropertyPromotion,
         doctrineCollectionDocstrings,
         doctrineAttributes,
+        arrayDocstrings,
         directoryStructure,
         groupByType,
         phpVersion,
@@ -193,6 +197,7 @@ export default function Home() {
         constructorPropertyPromotion: constructorType !== 'none' ? constructorPropertyPromotion : false,
         doctrineCollectionDocstrings: framework === 'doctrine' ? doctrineCollectionDocstrings : false,
         doctrineAttributes: framework === 'doctrine' ? doctrineAttributes : undefined,
+        arrayDocstrings: framework === 'plain' ? arrayDocstrings : undefined,
         directoryStructure,
         groupByType,
         phpVersion,
@@ -596,6 +601,26 @@ export default function Home() {
                         />
                         <Label htmlFor="doctrine-docstrings" className="cursor-pointer">
                           Add Collection docstrings (Collection&lt;array-key, Entity&gt;)
+                        </Label>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {framework === 'plain' && (
+                <>
+                  <div className="space-y-2">
+                    <Label>Plain PHP Options</Label>
+                    <div className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="array-docstrings"
+                          checked={arrayDocstrings}
+                          onCheckedChange={(checked) => setArrayDocstrings(checked === true)}
+                        />
+                        <Label htmlFor="array-docstrings" className="cursor-pointer">
+                          Add array docstrings (array&lt;int, Type&gt;)
                         </Label>
                       </div>
                     </div>
