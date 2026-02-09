@@ -2,10 +2,7 @@ import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { NextResponse } from 'next/server';
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ filename: string }> }
-) {
+export async function GET(request: Request, { params }: { params: Promise<{ filename: string }> }) {
   try {
     const { filename } = await params;
     const filePath = join(process.cwd(), 'examples', filename);
@@ -16,10 +13,6 @@ export async function GET(
       },
     });
   } catch {
-    return NextResponse.json(
-      { error: 'File not found' },
-      { status: 404 }
-    );
+    return NextResponse.json({ error: 'File not found' }, { status: 404 });
   }
 }
-

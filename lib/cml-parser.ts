@@ -43,29 +43,32 @@ export interface CMLModel {
 
 // Parser for CML files
 export function parseCML(content: string): CMLModel {
-  const lines = content.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('//'));
-  
+  const lines = content
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('//'));
+
   const boundedContexts: CMLBoundedContext[] = [];
   let currentBoundedContext: CMLBoundedContext | null = null;
   let currentAggregate: CMLAggregate | null = null;
   let currentEntity: CMLEntity | null = null;
   let currentValueObject: CMLValueObject | null = null;
   let currentEnum: CMLEnum | null = null;
-  
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    
+
     // BoundedContext
     if (line.startsWith('BoundedContext ')) {
       const name = line.match(/BoundedContext\s+(\w+)/)?.[1] || '';
       currentBoundedContext = {
         name,
-        aggregates: []
+        aggregates: [],
       };
       boundedContexts.push(currentBoundedContext);
       continue;
     }
-    
+
     // Aggregate
     if (line.startsWith('Aggregate ')) {
       const name = line.match(/Aggregate\s+(\w+)/)?.[1] || '';
@@ -73,54 +76,54 @@ export function parseCML(content: string): CMLModel {
         name,
         entities: [],
         valueObjects: [],
-        enums: []
+        enums: [],
       };
       if (currentBoundedContext) {
         currentBoundedContext.aggregates.push(currentAggregate);
       }
       continue;
     }
-    
+
     // Entity
     if (line.startsWith('Entity ')) {
       const name = line.match(/Entity\s+(\w+)/)?.[1] || '';
       currentEntity = {
         name,
         isAggregateRoot: false,
-        properties: []
+        properties: [],
       };
       if (currentAggregate) {
         currentAggregate.entities.push(currentEntity);
       }
       continue;
     }
-    
+
     // ValueObject
     if (line.startsWith('ValueObject ')) {
       const name = line.match(/ValueObject\s+(\w+)/)?.[1] || '';
       currentValueObject = {
         name,
-        properties: []
+        properties: [],
       };
       if (currentAggregate) {
         currentAggregate.valueObjects.push(currentValueObject);
       }
       continue;
     }
-    
+
     // Enum
     if (line.startsWith('enum ')) {
       const name = line.match(/enum\s+(\w+)/)?.[1] || '';
       currentEnum = {
         name,
-        values: []
+        values: [],
       };
       if (currentAggregate) {
         currentAggregate.enums.push(currentEnum);
       }
       continue;
     }
-    
+
     // Closing braces - check this BEFORE enum value parsing to avoid processing '}' as a value
     if (line === '}' || line.endsWith('}')) {
       if (currentEnum) currentEnum = null;
@@ -130,16 +133,18 @@ export function parseCML(content: string): CMLModel {
       if (currentAggregate && !currentEntity && !currentValueObject && !currentEnum) {
         // Look ahead to see if there are more entities/value objects
         const remainingLines = lines.slice(i + 1).join(' ');
-        if (!remainingLines.includes('Entity ') && 
-            !remainingLines.includes('ValueObject ') && 
-            !remainingLines.includes('enum ') &&
-            !remainingLines.includes('Aggregate ')) {
+        if (
+          !remainingLines.includes('Entity ') &&
+          !remainingLines.includes('ValueObject ') &&
+          !remainingLines.includes('enum ') &&
+          !remainingLines.includes('Aggregate ')
+        ) {
           // This aggregate is done
         }
       }
       continue;
     }
-    
+
     // Enum values - must be checked BEFORE property parsing to avoid conflicts
     if (line && currentEnum) {
       // Remove comments
@@ -147,7 +152,15 @@ export function parseCML(content: string): CMLModel {
       if (cleanLine && cleanLine !== '}' && !cleanLine.startsWith('enum ')) {
         if (cleanLine.includes(',')) {
           // Handle comma-separated values
-          const values = cleanLine.split(',').map(v => v.trim().replace(/[;,\/\/].*$/, '').trim()).filter(v => v && v !== '}');
+          const values = cleanLine
+            .split(',')
+            .map((v) =>
+              v
+                .trim()
+                .replace(/[;,\/\/].*$/, '')
+                .trim()
+            )
+            .filter((v) => v && v !== '}');
           currentEnum.values.push(...values);
         } else {
           // Single value on its own line
@@ -159,13 +172,13 @@ export function parseCML(content: string): CMLModel {
       }
       continue; // Skip property parsing for enum values
     }
-    
+
     // aggregateRoot
     if (line === 'aggregateRoot' && currentEntity) {
       currentEntity.isAggregateRoot = true;
       continue;
     }
-    
+
     // Property parsing
     if (line && currentEntity) {
       const property = parseProperty(line);
@@ -173,7 +186,7 @@ export function parseCML(content: string): CMLModel {
         currentEntity.properties.push(property);
       }
     }
-    
+
     if (line && currentValueObject) {
       const property = parseProperty(line);
       if (property) {
@@ -181,7 +194,7 @@ export function parseCML(content: string): CMLModel {
       }
     }
   }
-  
+
   return { boundedContexts };
 }
 
@@ -189,12 +202,12 @@ function parseProperty(line: string): CMLProperty | null {
   // Remove comments
   line = line.replace(/\/\/.*$/, '').trim();
   if (!line || line === '{' || line === '}' || line === 'aggregateRoot') return null;
-  
+
   const nullable = line.includes('nullable');
   const isRelation = line.startsWith('-');
   const isCollection = line.includes('Set<') || line.includes('List<');
   const hasEnumMarker = line.includes('^');
-  
+
   // Extract collection type if present
   let collectionType = '';
   if (isCollection) {
@@ -203,7 +216,7 @@ function parseProperty(line: string): CMLProperty | null {
       collectionType = match[1];
     }
   }
-  
+
   // Remove nullable, Set<, List<, ^, and other modifiers for parsing
   let cleanLine = line
     .replace(/\s*nullable\s*/g, '')
@@ -211,27 +224,26 @@ function parseProperty(line: string): CMLProperty | null {
     .replace(/List<\w+>/g, collectionType || '')
     .replace(/^-/, '')
     .trim();
-  
+
   // Handle ^ symbol - it indicates an enum reference, remove it but keep the type
   cleanLine = cleanLine.replace(/\^/g, '');
-  
+
   // Extract type and name
-  const parts = cleanLine.split(/\s+/).filter(p => p);
+  const parts = cleanLine.split(/\s+/).filter((p) => p);
   if (parts.length < 2) return null;
-  
+
   const type = parts[0];
   const name = parts[1].replace(/[;,]/, '');
-  
+
   // If it's a collection, use the extracted collection type
   const finalType = isCollection && collectionType ? collectionType : type;
-  
+
   return {
     name,
     type: finalType,
     nullable,
     isRelation,
     isCollection,
-    isEnum: hasEnumMarker
+    isEnum: hasEnumMarker,
   };
 }
-

@@ -58,7 +58,7 @@ const TEST_CONFIGS: GeneratorConfig[] = [
 async function testFile(filePath: string): Promise<TestResult> {
   const fileName = filePath.split('/').pop() || filePath;
   console.log(`\n📄 Testing: ${fileName}`);
-  
+
   const result: TestResult = {
     file: fileName,
     success: false,
@@ -69,7 +69,7 @@ async function testFile(filePath: string): Promise<TestResult> {
     // Read and parse CML file
     const content = await readFile(filePath, 'utf-8');
     const model = parseCML(content);
-    
+
     console.log(`   ✓ Parsed successfully`);
     console.log(`   - Bounded Contexts: ${model.boundedContexts.length}`);
     const totalAggregates = model.boundedContexts.reduce((sum, bc) => sum + bc.aggregates.length, 0);
@@ -94,14 +94,14 @@ async function testFile(filePath: string): Promise<TestResult> {
     for (const config of TEST_CONFIGS) {
       const configName = `${config.framework} (${config.publicProperties ? 'public' : 'private'}, getters: ${config.addGetters}, setters: ${config.addSetters})`;
       console.log(`   🔧 Testing config: ${configName}`);
-      
+
       try {
         const files = generatePHP(model, config);
-        
+
         if (!files || files.length === 0) {
           throw new Error('No PHP files generated');
         }
-        
+
         // Basic validation: check for common PHP syntax in each file
         for (const file of files) {
           if (!file.content || file.content.trim() === '') {
@@ -110,7 +110,7 @@ async function testFile(filePath: string): Promise<TestResult> {
           if (!file.content.includes('<?php')) {
             throw new Error(`Generated file ${file.filename} missing PHP opening tag`);
           }
-          
+
           // Special validation for enum files
           if (file.type === 'enum') {
             // Check that enum has cases (not just an empty enum declaration)
@@ -129,7 +129,7 @@ async function testFile(filePath: string): Promise<TestResult> {
             }
           }
         }
-        
+
         const totalChars = files.reduce((sum, f) => sum + f.content.length, 0);
         console.log(`      ✓ Generated ${files.length} file(s) with ${totalChars} total characters`);
         result.configs.push({
@@ -152,8 +152,8 @@ async function testFile(filePath: string): Promise<TestResult> {
     }
 
     // Overall success if at least one config worked
-    result.success = result.configs.some(c => c.success);
-    
+    result.success = result.configs.some((c) => c.success);
+
     if (result.success) {
       console.log(`   ✅ File test completed`);
     } else {
@@ -172,11 +172,11 @@ async function testFile(filePath: string): Promise<TestResult> {
 
 async function runTests() {
   console.log('🧪 Starting PHP Generation Tests\n');
-  console.log('=' .repeat(60));
+  console.log('='.repeat(60));
 
   const examplesDir = join(process.cwd(), 'examples');
   const files = await readdir(examplesDir);
-  const cmlFiles = files.filter(f => f.endsWith('.cml'));
+  const cmlFiles = files.filter((f) => f.endsWith('.cml'));
 
   if (cmlFiles.length === 0) {
     console.log('❌ No CML files found in examples directory');
@@ -197,13 +197,10 @@ async function runTests() {
   console.log('\n' + '='.repeat(60));
   console.log('\n📊 Test Summary\n');
 
-  const successfulFiles = results.filter(r => r.success).length;
-  const failedFiles = results.filter(r => !r.success).length;
+  const successfulFiles = results.filter((r) => r.success).length;
+  const failedFiles = results.filter((r) => !r.success).length;
   const totalConfigs = results.reduce((sum, r) => sum + r.configs.length, 0);
-  const successfulConfigs = results.reduce(
-    (sum, r) => sum + r.configs.filter(c => c.success).length,
-    0
-  );
+  const successfulConfigs = results.reduce((sum, r) => sum + r.configs.filter((c) => c.success).length, 0);
 
   console.log(`Files tested: ${results.length}`);
   console.log(`✅ Successful: ${successfulFiles}`);
@@ -246,4 +243,3 @@ runTests().catch((error) => {
   console.error('Fatal error:', error);
   process.exit(1);
 });
-

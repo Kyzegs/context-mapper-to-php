@@ -10,7 +10,18 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { parseCML } from '@/lib/cml-parser';
 import { generatePHP, type GeneratorConfig, type Framework } from '@/lib/php-generator';
-import { Download, FileText, Settings, FolderDown, Check, ChevronsUpDown, Copy, CheckCircle, Plus, Trash2 } from 'lucide-react';
+import {
+  Download,
+  FileText,
+  Settings,
+  FolderDown,
+  Check,
+  ChevronsUpDown,
+  Copy,
+  CheckCircle,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 import { FileExplorer } from '@/components/file-explorer';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -23,10 +34,7 @@ import { cn } from '@/lib/utils';
 import type { GeneratedFile } from '@/lib/php-generator';
 import { toast } from 'sonner';
 
-const EXAMPLE_FILES = [
-  'DDD-Sample.cml',
-  'insurance-example-for-JDL-generation.cml',
-];
+const EXAMPLE_FILES = ['DDD-Sample.cml', 'insurance-example-for-JDL-generation.cml'];
 
 const STORAGE_KEY = 'cml-to-php-settings';
 
@@ -73,7 +81,9 @@ export default function Home() {
   const [doctrineCollectionDocstrings, setDoctrineCollectionDocstrings] = useState(false);
   const [doctrineAttributes, setDoctrineAttributes] = useState(true);
   const [arrayDocstrings, setArrayDocstrings] = useState(false);
-  const [directoryStructure, setDirectoryStructure] = useState<'flat' | 'bounded-context' | 'aggregate' | 'psr-4'>('flat');
+  const [directoryStructure, setDirectoryStructure] = useState<'flat' | 'bounded-context' | 'aggregate' | 'psr-4'>(
+    'flat'
+  );
   const [groupByType, setGroupByType] = useState(false);
   const [phpVersion, setPhpVersion] = useState<'8.1' | '8.2' | '8.3' | '8.4'>('8.1');
   const [readonlyValueObjects, setReadonlyValueObjects] = useState(false);
@@ -87,7 +97,7 @@ export default function Home() {
   // Load settings from localStorage on mount
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    
+
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
@@ -107,7 +117,7 @@ export default function Home() {
         setPhpVersion(settings.phpVersion || '8.1');
         setReadonlyValueObjects(settings.readonlyValueObjects ?? false);
         setRegexPatternMappings(settings.regexPatternMappings || []);
-        
+
         // Note: selectedFile and cmlContent are intentionally not persisted
       }
     } catch (err) {
@@ -120,7 +130,7 @@ export default function Home() {
   // Save settings to localStorage whenever they change
   useEffect(() => {
     if (!isInitialized || typeof window === 'undefined') return;
-    
+
     try {
       const settings: StoredSettings = {
         framework,
@@ -230,7 +240,7 @@ export default function Home() {
       if (files.length > 0) {
         setSelectedPhpFile(files[0].filename);
       }
-      
+
       // Scroll to output after a brief delay to allow state update
       setTimeout(() => {
         outputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -349,9 +359,7 @@ export default function Home() {
                         aria-expanded={open}
                         className="w-full justify-between min-w-0"
                       >
-                        <span className="truncate">
-                          {selectedFile || 'Select an example file...'}
-                        </span>
+                        <span className="truncate">{selectedFile || 'Select an example file...'}</span>
                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50 flex-shrink-0" />
                       </Button>
                     </PopoverTrigger>
@@ -372,10 +380,7 @@ export default function Home() {
                                 }}
                               >
                                 <Check
-                                  className={cn(
-                                    'mr-2 h-4 w-4',
-                                    selectedFile === file ? 'opacity-100' : 'opacity-0'
-                                  )}
+                                  className={cn('mr-2 h-4 w-4', selectedFile === file ? 'opacity-100' : 'opacity-0')}
                                 />
                                 {file}
                               </CommandItem>
@@ -388,11 +393,7 @@ export default function Home() {
                 </div>
                 <div className="space-y-2 flex-1 min-w-0">
                   <Label>Upload Your Own</Label>
-                  <Input
-                    type="file"
-                    accept=".cml"
-                    onChange={handleFileUpload}
-                  />
+                  <Input type="file" accept=".cml" onChange={handleFileUpload} />
                 </div>
               </div>
 
@@ -463,7 +464,12 @@ export default function Home() {
 
                   <div className="space-y-2">
                     <Label>Directory Structure</Label>
-                    <Select value={directoryStructure} onValueChange={(v) => setDirectoryStructure(v as 'flat' | 'bounded-context' | 'aggregate' | 'psr-4')}>
+                    <Select
+                      value={directoryStructure}
+                      onValueChange={(v) =>
+                        setDirectoryStructure(v as 'flat' | 'bounded-context' | 'aggregate' | 'psr-4')
+                      }
+                    >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -480,22 +486,33 @@ export default function Home() {
                         checked={groupByType}
                         onCheckedChange={(checked) => setGroupByType(checked === true)}
                       />
-                      <Label
-                        htmlFor="groupByType"
-                        className="text-sm font-normal cursor-pointer"
-                      >
+                      <Label htmlFor="groupByType" className="text-sm font-normal cursor-pointer">
                         Group by type (Enum/, ValueObject/, Entity/)
                       </Label>
                     </div>
                     <p className="text-xs text-muted-foreground">
                       {directoryStructure === 'flat' && !groupByType && 'All files in a single directory'}
-                      {directoryStructure === 'flat' && groupByType && 'Files grouped by type (Enum/, ValueObject/, Entity/) in root'}
-                      {directoryStructure === 'bounded-context' && !groupByType && 'Files organized by bounded context folders'}
-                      {directoryStructure === 'bounded-context' && groupByType && 'Files organized by bounded context, then by type'}
-                      {directoryStructure === 'aggregate' && !groupByType && 'Files organized by bounded context and aggregate folders'}
-                      {directoryStructure === 'aggregate' && groupByType && 'Files organized by bounded context/aggregate, then by type'}
-                      {directoryStructure === 'psr-4' && !groupByType && 'PSR-4 structure with namespace-based directories and namespaces'}
-                      {directoryStructure === 'psr-4' && groupByType && 'PSR-4 structure with type folders (Enum/, ValueObject/, Entity/)'}
+                      {directoryStructure === 'flat' &&
+                        groupByType &&
+                        'Files grouped by type (Enum/, ValueObject/, Entity/) in root'}
+                      {directoryStructure === 'bounded-context' &&
+                        !groupByType &&
+                        'Files organized by bounded context folders'}
+                      {directoryStructure === 'bounded-context' &&
+                        groupByType &&
+                        'Files organized by bounded context, then by type'}
+                      {directoryStructure === 'aggregate' &&
+                        !groupByType &&
+                        'Files organized by bounded context and aggregate folders'}
+                      {directoryStructure === 'aggregate' &&
+                        groupByType &&
+                        'Files organized by bounded context/aggregate, then by type'}
+                      {directoryStructure === 'psr-4' &&
+                        !groupByType &&
+                        'PSR-4 structure with namespace-based directories and namespaces'}
+                      {directoryStructure === 'psr-4' &&
+                        groupByType &&
+                        'PSR-4 structure with type folders (Enum/, ValueObject/, Entity/)'}
                     </p>
                   </div>
 
@@ -544,7 +561,7 @@ export default function Home() {
                                   className="font-mono"
                                 />
                               </div>
-                              <div className={groupByType ? "grid grid-cols-2 gap-2" : "space-y-1"}>
+                              <div className={groupByType ? 'grid grid-cols-2 gap-2' : 'space-y-1'}>
                                 {groupByType && (
                                   <div className="space-y-1 min-w-0 w-full">
                                     <Label className="text-xs text-muted-foreground">Type Folder (optional)</Label>
@@ -553,7 +570,11 @@ export default function Home() {
                                         value={mapping.typeFolder || undefined}
                                         onValueChange={(v) => {
                                           const updated = [...regexPatternMappings];
-                                          updated[index] = { ...updated[index], typeFolder: v === 'clear' ? undefined : v as 'Enum' | 'ValueObject' | 'Entity' };
+                                          updated[index] = {
+                                            ...updated[index],
+                                            typeFolder:
+                                              v === 'clear' ? undefined : (v as 'Enum' | 'ValueObject' | 'Entity'),
+                                          };
                                           setRegexPatternMappings(updated);
                                         }}
                                       >
@@ -619,7 +640,6 @@ export default function Home() {
                       </div>
                     )}
                   </div>
-
                 </div>
               </div>
 
@@ -647,7 +667,9 @@ export default function Home() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">No constructor</SelectItem>
-                        <SelectItem value="required">Constructor with only required properties (Non-nullable)</SelectItem>
+                        <SelectItem value="required">
+                          Constructor with only required properties (Non-nullable)
+                        </SelectItem>
                         <SelectItem value="all">Constructor with all properties</SelectItem>
                       </SelectContent>
                     </Select>
@@ -799,96 +821,91 @@ export default function Home() {
                     <Label className="text-xs font-semibold text-muted-foreground uppercase">Files</Label>
                   </div>
                   <div className="flex-1 overflow-hidden">
-                    <FileExplorer
-                      files={phpFiles}
-                      selectedFile={selectedPhpFile}
-                      onFileSelect={setSelectedPhpFile}
-                    />
+                    <FileExplorer files={phpFiles} selectedFile={selectedPhpFile} onFileSelect={setSelectedPhpFile} />
                   </div>
                 </div>
 
                 {/* Code Viewer */}
                 <div className="flex-1 flex flex-col overflow-hidden">
-                  {selectedPhpFile && (() => {
-                    const file = phpFiles.find(f => f.filename === selectedPhpFile);
-                    if (!file) return null;
-                    
-                    return (
-                      <>
-                        <div className="flex items-center justify-between p-3 border-b bg-muted/30">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm">
-                              {file.type === 'enum' && '📋'}
-                              {file.type === 'valueobject' && '📦'}
-                              {file.type === 'entity' && '🏗️'}
-                            </span>
-                            <nav className="flex items-center gap-1 text-sm" aria-label="Breadcrumb">
-                              {(() => {
-                                const pathParts = file.path.split('/').filter(p => p && p.trim() !== '');
-                                if (pathParts.length <= 1) {
-                                  return <span className="font-medium">{file.filename}</span>;
-                                }
-                                return (
-                                  <>
-                                    {pathParts.slice(0, -1).map((part, idx) => (
-                                      <span key={idx} className="flex items-center gap-1">
-                                        <span className="text-muted-foreground hover:text-foreground">{part}</span>
-                                        <span className="text-muted-foreground/50">/</span>
-                                      </span>
-                                    ))}
-                                    <span className="font-medium">{pathParts[pathParts.length - 1]}</span>
-                                  </>
-                                );
-                              })()}
-                            </nav>
-                            <span className="text-xs text-muted-foreground">
-                              ({file.content.length} characters)
-                            </span>
+                  {selectedPhpFile &&
+                    (() => {
+                      const file = phpFiles.find((f) => f.filename === selectedPhpFile);
+                      if (!file) return null;
+
+                      return (
+                        <>
+                          <div className="flex items-center justify-between p-3 border-b bg-muted/30">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm">
+                                {file.type === 'enum' && '📋'}
+                                {file.type === 'valueobject' && '📦'}
+                                {file.type === 'entity' && '🏗️'}
+                              </span>
+                              <nav className="flex items-center gap-1 text-sm" aria-label="Breadcrumb">
+                                {(() => {
+                                  const pathParts = file.path.split('/').filter((p) => p && p.trim() !== '');
+                                  if (pathParts.length <= 1) {
+                                    return <span className="font-medium">{file.filename}</span>;
+                                  }
+                                  return (
+                                    <>
+                                      {pathParts.slice(0, -1).map((part, idx) => (
+                                        <span key={idx} className="flex items-center gap-1">
+                                          <span className="text-muted-foreground hover:text-foreground">{part}</span>
+                                          <span className="text-muted-foreground/50">/</span>
+                                        </span>
+                                      ))}
+                                      <span className="font-medium">{pathParts[pathParts.length - 1]}</span>
+                                    </>
+                                  );
+                                })()}
+                              </nav>
+                              <span className="text-xs text-muted-foreground">({file.content.length} characters)</span>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                onClick={() => handleCopyToClipboard(file)}
+                                variant="ghost"
+                                size="sm"
+                                title="Copy to clipboard"
+                              >
+                                {copiedFile === file.filename ? (
+                                  <CheckCircle className="h-4 w-4 text-green-600" />
+                                ) : (
+                                  <Copy className="h-4 w-4" />
+                                )}
+                              </Button>
+                              <Button
+                                onClick={() => handleDownloadFile(file)}
+                                variant="ghost"
+                                size="sm"
+                                title="Download file"
+                              >
+                                <Download className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </div>
-                          <div className="flex gap-2">
-                            <Button
-                              onClick={() => handleCopyToClipboard(file)}
-                              variant="ghost"
-                              size="sm"
-                              title="Copy to clipboard"
+                          <div className="flex-1 overflow-auto">
+                            <SyntaxHighlighter
+                              language="php"
+                              style={theme === 'dark' ? tomorrow : oneLight}
+                              customStyle={{
+                                margin: 0,
+                                borderRadius: 0,
+                                fontSize: '0.875rem',
+                                lineHeight: '1.5',
+                                padding: '1rem',
+                                height: '100%',
+                              }}
+                              showLineNumbers={true}
+                              wrapLines={true}
                             >
-                              {copiedFile === file.filename ? (
-                                <CheckCircle className="h-4 w-4 text-green-600" />
-                              ) : (
-                                <Copy className="h-4 w-4" />
-                              )}
-                            </Button>
-                            <Button
-                              onClick={() => handleDownloadFile(file)}
-                              variant="ghost"
-                              size="sm"
-                              title="Download file"
-                            >
-                              <Download className="h-4 w-4" />
-                            </Button>
+                              {file.content}
+                            </SyntaxHighlighter>
                           </div>
-                        </div>
-                        <div className="flex-1 overflow-auto">
-                          <SyntaxHighlighter
-                            language="php"
-                            style={theme === 'dark' ? tomorrow : oneLight}
-                            customStyle={{
-                              margin: 0,
-                              borderRadius: 0,
-                              fontSize: '0.875rem',
-                              lineHeight: '1.5',
-                              padding: '1rem',
-                              height: '100%',
-                            }}
-                            showLineNumbers={true}
-                            wrapLines={true}
-                          >
-                            {file.content}
-                          </SyntaxHighlighter>
-                        </div>
-                      </>
-                    );
-                  })()}
+                        </>
+                      );
+                    })()}
                   {!selectedPhpFile && (
                     <div className="flex-1 flex items-center justify-center text-muted-foreground">
                       Select a file from the explorer to view its content

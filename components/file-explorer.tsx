@@ -29,7 +29,7 @@ function buildFileTree(files: GeneratedFile[]): FileNode {
 
   for (const file of files) {
     // Split path and filter out empty strings (from trailing slashes, etc.)
-    const parts = file.path.split('/').filter(part => part.length > 0);
+    const parts = file.path.split('/').filter((part) => part.length > 0);
     let current = root;
 
     for (let i = 0; i < parts.length; i++) {
@@ -53,18 +53,19 @@ function buildFileTree(files: GeneratedFile[]): FileNode {
         if (!part || part.trim() === '') {
           continue;
         }
-        
+
         if (!current.children) {
           current.children = [];
         }
-        let folder = current.children.find(
-          (child) => child.name === part && child.type === 'folder'
-        );
+        let folder = current.children.find((child) => child.name === part && child.type === 'folder');
 
         if (!folder) {
           folder = {
             name: part,
-            path: parts.slice(0, i + 1).filter(p => p && p.trim() !== '').join('/'),
+            path: parts
+              .slice(0, i + 1)
+              .filter((p) => p && p.trim() !== '')
+              .join('/'),
             type: 'folder',
             children: [],
           };
@@ -87,23 +88,13 @@ interface TreeNodeProps {
   onToggleFolder: (path: string) => void;
 }
 
-function TreeNode({
-  node,
-  level,
-  selectedFile,
-  onFileSelect,
-  expandedFolders,
-  onToggleFolder,
-}: TreeNodeProps) {
+function TreeNode({ node, level, selectedFile, onFileSelect, expandedFolders, onToggleFolder }: TreeNodeProps) {
   const isExpanded = expandedFolders.has(node.path);
   const isSelected = node.type === 'file' && node.file?.filename === selectedFile;
   const hasChildren = node.children && node.children.length > 0;
 
   if (node.type === 'file' && node.file) {
-    const fileIcon = 
-      node.file.type === 'enum' ? '📋' :
-      node.file.type === 'valueobject' ? '📦' :
-      '🏗️';
+    const fileIcon = node.file.type === 'enum' ? '📋' : node.file.type === 'valueobject' ? '📦' : '🏗️';
 
     return (
       <div
@@ -149,8 +140,8 @@ function TreeNode({
       </div>
       {hasChildren && isExpanded && (
         <div>
-          {node.children!
-            .sort((a, b) => {
+          {node
+            .children!.sort((a, b) => {
               // Folders first, then files
               if (a.type !== b.type) {
                 return a.type === 'folder' ? -1 : 1;
@@ -192,7 +183,7 @@ export function FileExplorer({ files, selectedFile, onFileSelect }: FileExplorer
     if (files.length > 0) {
       const allFolders = new Set<string>();
       for (const file of files) {
-        const parts = file.path.split('/').filter(part => part.length > 0);
+        const parts = file.path.split('/').filter((part) => part.length > 0);
         for (let i = 0; i < parts.length - 1; i++) {
           allFolders.add(parts.slice(0, i + 1).join('/'));
         }
@@ -211,19 +202,19 @@ export function FileExplorer({ files, selectedFile, onFileSelect }: FileExplorer
     if (node.type === 'file') {
       return node;
     }
-    
+
     if (!node.children || node.children.length === 0) {
       return null; // Empty folder
     }
-    
+
     const filteredChildren = node.children
-      .map(child => filterEmptyFolders(child))
+      .map((child) => filterEmptyFolders(child))
       .filter((child): child is FileNode => child !== null);
-    
+
     if (filteredChildren.length === 0) {
       return null; // Folder has no valid children
     }
-    
+
     return {
       ...node,
       children: filteredChildren,
@@ -231,20 +222,16 @@ export function FileExplorer({ files, selectedFile, onFileSelect }: FileExplorer
   }
 
   if (!tree.children || tree.children.length === 0) {
-    return (
-      <div className="p-4 text-sm text-muted-foreground">No files to display</div>
-    );
+    return <div className="p-4 text-sm text-muted-foreground">No files to display</div>;
   }
 
   // Filter out empty folders
   const filteredChildren = tree.children
-    .map(child => filterEmptyFolders(child))
+    .map((child) => filterEmptyFolders(child))
     .filter((child): child is FileNode => child !== null);
 
   if (filteredChildren.length === 0) {
-    return (
-      <div className="p-4 text-sm text-muted-foreground">No files to display</div>
-    );
+    return <div className="p-4 text-sm text-muted-foreground">No files to display</div>;
   }
 
   return (
@@ -270,4 +257,3 @@ export function FileExplorer({ files, selectedFile, onFileSelect }: FileExplorer
     </div>
   );
 }
-
