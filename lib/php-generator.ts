@@ -451,6 +451,9 @@ function generateEntity(
           } else {
             phpProp.addAttribute('Doctrine\\ORM\\Mapping\\ManyToOne', [`targetEntity: ${prop.type}::class`]);
           }
+        } else if (prop.isCollection) {
+          // Primitive collection (e.g. List<string>) – store as JSON, PHP type is array
+          phpProp.addAttribute('Doctrine\\ORM\\Mapping\\Column', [`type: 'json'`, `nullable: ${prop.nullable}`]);
         } else {
           phpProp.addAttribute('Doctrine\\ORM\\Mapping\\Column', [
             `type: '${mapDoctrineType(prop.type)}'`,
@@ -458,10 +461,9 @@ function generateEntity(
           ]);
         }
       } else {
-        // Doctrine framework but attributes disabled - still use Doctrine types for collections
-        if (prop.isCollection) {
+        // Doctrine framework but attributes disabled - relation collections use Collection type
+        if (prop.isCollection && prop.isRelation) {
           phpProp.setType('Doctrine\\Common\\Collections\\Collection');
-          // Add collection docstring if enabled
           addCollectionDocstring(phpProp, prop, 'var', config);
         }
       }
@@ -475,11 +477,14 @@ function generateEntity(
 
     let constructorBody = '';
 
-    // Add Doctrine collection initialization
+    // Add Doctrine collection initialization (relation collections only; primitive collections use array)
     if (config.framework === 'doctrine') {
+      const includedNames = new Set(propertiesToInclude.map((p) => p.name));
       for (const prop of entity.properties) {
-        if (prop.isCollection) {
+        if (prop.isCollection && prop.isRelation) {
           constructorBody += `$this->${prop.name} = new \\Doctrine\\Common\\Collections\\ArrayCollection();\n`;
+        } else if (prop.isCollection && !prop.isRelation && !includedNames.has(prop.name)) {
+          constructorBody += `$this->${prop.name} = [];\n`;
         }
       }
     }
@@ -514,8 +519,10 @@ function generateEntity(
       constructor.setPublic();
       let constructorBody = '';
       for (const prop of entity.properties) {
-        if (prop.isCollection) {
+        if (prop.isCollection && prop.isRelation) {
           constructorBody += `$this->${prop.name} = new \\Doctrine\\Common\\Collections\\ArrayCollection();\n`;
+        } else if (prop.isCollection && !prop.isRelation) {
+          constructorBody += `$this->${prop.name} = [];\n`;
         }
       }
       constructor.setBody(constructorBody);
@@ -601,22 +608,27 @@ function addCollectionDocstring(
 ): void {
   if (!prop.isCollection) return;
 
-  if (config.doctrineCollectionDocstrings && config.framework === 'doctrine') {
-    const doc =
-      docType === 'param'
-        ? `@param \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}> $${prop.name}`
-        : docType === 'return'
-          ? `@return \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}>`
-          : `@var \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}>`;
-    target.addComment(doc);
+  const arrayDoc =
+    docType === 'param'
+      ? `@param array<int, ${prop.type}> $${prop.name}`
+      : docType === 'return'
+        ? `@return array<int, ${prop.type}>`
+        : `@var array<int, ${prop.type}>`;
+
+  if (config.framework === 'doctrine') {
+    if (prop.isRelation && config.doctrineCollectionDocstrings) {
+      const doc =
+        docType === 'param'
+          ? `@param \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}> $${prop.name}`
+          : docType === 'return'
+            ? `@return \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}>`
+            : `@var \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}>`;
+      target.addComment(doc);
+    } else if (!prop.isRelation && config.arrayDocstrings) {
+      target.addComment(arrayDoc);
+    }
   } else if (config.arrayDocstrings && config.framework === 'plain') {
-    const doc =
-      docType === 'param'
-        ? `@param array<int, ${prop.type}> $${prop.name}`
-        : docType === 'return'
-          ? `@return array<int, ${prop.type}>`
-          : `@var array<int, ${prop.type}>`;
-    target.addComment(doc);
+    target.addComment(arrayDoc);
   }
 }
 
@@ -653,6 +665,19 @@ function mapTypeToPHP(config: GeneratorConfig, prop: CMLProperty): string {
     return 'mixed';
   }
 
+  // Collections: check before primitive types so List<string>, Set<int> etc. become array/Collection
+  if (prop.isCollection) {
+    if (prop.isRelation) {
+      if (config.framework === 'doctrine') {
+        return 'Doctrine\\Common\\Collections\\Collection';
+      }
+      if (config.framework === 'laravel') {
+        return 'Illuminate\\Database\\Eloquent\\Collection';
+      }
+    }
+    return 'array';
+  }
+
   const lowerType = prop.type.toLowerCase();
 
   // Primitive types
@@ -663,16 +688,6 @@ function mapTypeToPHP(config: GeneratorConfig, prop: CMLProperty): string {
   if (lowerType === 'datetime') return '\\DateTime';
   if (lowerType === 'date') return '\\DateTime';
   if (lowerType === 'clob') return 'string';
-
-  // Collections
-  if (prop.isCollection) {
-    if (config.framework === 'doctrine') {
-      return 'Doctrine\\Common\\Collections\\Collection';
-    } else if (config.framework === 'laravel') {
-      return 'Illuminate\\Database\\Eloquent\\Collection';
-    }
-    return 'array';
-  }
 
   // Relations and custom types
   return prop.type;
