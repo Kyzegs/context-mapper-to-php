@@ -14,6 +14,13 @@ import type {
 
 export type Framework = 'laravel' | 'doctrine' | 'plain';
 
+export interface RegexPatternMapping {
+  pattern: string;
+  typeFolder?: 'Enum' | 'ValueObject' | 'Entity';
+  subfolder: string;
+  nameReplace?: string;
+}
+
 export interface GeneratorConfig {
   framework: Framework;
   publicProperties: boolean;
@@ -29,6 +36,7 @@ export interface GeneratorConfig {
   groupByType?: boolean;
   phpVersion?: '8.1' | '8.2' | '8.3' | '8.4';
   readonlyValueObjects?: boolean;
+  regexPatternMappings?: RegexPatternMapping[];
 }
 
 export interface GeneratedFile {
@@ -57,10 +65,15 @@ export function generatePHP(
       
       // Generate enums
       for (const enumDef of aggregate.enums) {
-        const enumFile = generateEnum(enumDef, config, boundedContext.name, aggregate.name);
-        const filename = `${enumDef.name}.php`;
+        const originalName = enumDef.name;
+        const mappingResult = config.regexPatternMappings
+          ? getSubfolderForFile(originalName, 'Enum', config.regexPatternMappings)
+          : { subfolder: '' };
+        const processedName = applyNameReplace(originalName, mappingResult.nameReplace);
+        const enumFile = generateEnum(enumDef, config, boundedContext.name, aggregate.name, processedName);
+        const filename = `${processedName}.php`;
         const typeFolder = groupByType ? 'Enum/' : '';
-        const fullPath = buildFilePath(directoryPath, typeFolder, filename);
+        const fullPath = buildFilePath(directoryPath, typeFolder, mappingResult.subfolder, filename);
         files.push({
           filename,
           path: fullPath,
@@ -71,10 +84,15 @@ export function generatePHP(
       
       // Generate value objects first (they might be referenced by entities)
       for (const valueObject of aggregate.valueObjects) {
-        const voFile = generateValueObject(valueObject, config, boundedContext.name, aggregate.name);
-        const filename = `${valueObject.name}.php`;
+        const originalName = valueObject.name;
+        const mappingResult = config.regexPatternMappings
+          ? getSubfolderForFile(originalName, 'ValueObject', config.regexPatternMappings)
+          : { subfolder: '' };
+        const processedName = applyNameReplace(originalName, mappingResult.nameReplace);
+        const voFile = generateValueObject(valueObject, config, boundedContext.name, aggregate.name, processedName);
+        const filename = `${processedName}.php`;
         const typeFolder = groupByType ? 'ValueObject/' : '';
-        const fullPath = buildFilePath(directoryPath, typeFolder, filename);
+        const fullPath = buildFilePath(directoryPath, typeFolder, mappingResult.subfolder, filename);
         files.push({
           filename,
           path: fullPath,
@@ -85,10 +103,15 @@ export function generatePHP(
       
       // Generate entities
       for (const entity of aggregate.entities) {
-        const entityFile = generateEntity(entity, config, boundedContext.name, aggregate.name);
-        const filename = `${entity.name}.php`;
+        const originalName = entity.name;
+        const mappingResult = config.regexPatternMappings
+          ? getSubfolderForFile(originalName, 'Entity', config.regexPatternMappings)
+          : { subfolder: '' };
+        const processedName = applyNameReplace(originalName, mappingResult.nameReplace);
+        const entityFile = generateEntity(entity, config, boundedContext.name, aggregate.name, processedName);
+        const filename = `${processedName}.php`;
         const typeFolder = groupByType ? 'Entity/' : '';
-        const fullPath = buildFilePath(directoryPath, typeFolder, filename);
+        const fullPath = buildFilePath(directoryPath, typeFolder, mappingResult.subfolder, filename);
         files.push({
           filename,
           path: fullPath,
@@ -129,10 +152,59 @@ function getDirectoryPath(
   }
 }
 
-function buildFilePath(basePath: string, typeFolder: string, filename: string): string {
-  // Remove trailing slashes from typeFolder and filter out empty parts
+function getSubfolderForFile(
+  filename: string,
+  fileType: 'Enum' | 'ValueObject' | 'Entity',
+  mappings: RegexPatternMapping[]
+): { subfolder: string; nameReplace?: string } {
+  // Find the first matching pattern for this file type
+  for (const mapping of mappings) {
+    // If typeFolder is specified, it must match the file type
+    if (mapping.typeFolder && mapping.typeFolder !== fileType) {
+      continue;
+    }
+    
+    if (!mapping.pattern || !mapping.subfolder) {
+      continue;
+    }
+    
+    try {
+      const regex = new RegExp(mapping.pattern);
+      if (regex.test(filename)) {
+        return {
+          subfolder: mapping.subfolder,
+          nameReplace: mapping.nameReplace,
+        };
+      }
+    } catch (err) {
+      // Invalid regex pattern, skip it
+      console.warn(`Invalid regex pattern: ${mapping.pattern}`, err);
+    }
+  }
+  
+  return { subfolder: '' };
+}
+
+function applyNameReplace(filename: string, nameReplace?: string): string {
+  if (!nameReplace) {
+    return filename;
+  }
+  
+  try {
+    const regex = new RegExp(nameReplace);
+    return filename.replace(regex, '');
+  } catch (err) {
+    // Invalid regex pattern, return original filename
+    console.warn(`Invalid name replace pattern: ${nameReplace}`, err);
+    return filename;
+  }
+}
+
+function buildFilePath(basePath: string, typeFolder: string, subfolder: string, filename: string): string {
+  // Remove trailing slashes from typeFolder and subfolder, and filter out empty parts
   const cleanTypeFolder = typeFolder.replace(/\/+$/, '');
-  const parts = [basePath, cleanTypeFolder, filename].filter(Boolean);
+  const cleanSubfolder = subfolder.replace(/\/+$/, '');
+  const parts = [basePath, cleanTypeFolder, cleanSubfolder, filename].filter(Boolean);
   return parts.join('/');
 }
 
@@ -144,7 +216,8 @@ function generateEnum(
   enumDef: CMLEnum,
   config: GeneratorConfig,
   boundedContextName?: string,
-  aggregateName?: string
+  aggregateName?: string,
+  nameOverride?: string
 ): string {
   const file = new PhpFile();
   file.setStrictTypes();
@@ -162,7 +235,8 @@ function generateEnum(
   file.addNamespace(namespace);
   
   // Add enum directly to file (not namespace) for proper rendering
-  const enumType = file.addEnum(enumDef.name);
+  const enumName = nameOverride || enumDef.name;
+  const enumType = file.addEnum(enumName);
   // Set the namespace on the enum so it appears in the correct namespace
   enumType.namespace = namespace;
   // Make it a string-backed enum
@@ -184,7 +258,8 @@ function generateValueObject(
   valueObject: CMLValueObject,
   config: GeneratorConfig,
   boundedContextName?: string,
-  aggregateName?: string
+  aggregateName?: string,
+  nameOverride?: string
 ): string {
   const file = new PhpFile();
   file.setStrictTypes();
@@ -192,7 +267,8 @@ function generateValueObject(
   const namespace = buildNamespace(config, boundedContextName, aggregateName);
   file.addNamespace(namespace);
   
-  const class_ = file.addNamespace(namespace).addClass(valueObject.name);
+  const className = nameOverride || valueObject.name;
+  const class_ = file.addNamespace(namespace).addClass(className);
   class_.setFinal();
   
   // Apply readonly class for PHP 8.2+ if enabled
@@ -303,7 +379,8 @@ function generateEntity(
   entity: CMLEntity,
   config: GeneratorConfig,
   boundedContextName?: string,
-  aggregateName?: string
+  aggregateName?: string,
+  nameOverride?: string
 ): string {
   const file = new PhpFile();
   file.setStrictTypes();
@@ -311,7 +388,8 @@ function generateEntity(
   const namespace = buildNamespace(config, boundedContextName, aggregateName);
   file.addNamespace(namespace);
   
-  const class_ = file.addNamespace(namespace).addClass(entity.name);
+  const className = nameOverride || entity.name;
+  const class_ = file.addNamespace(namespace).addClass(className);
   
   // Framework-specific setup
   if (config.framework === 'laravel') {

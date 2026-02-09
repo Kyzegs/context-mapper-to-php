@@ -4,12 +4,13 @@ import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { parseCML } from '@/lib/cml-parser';
 import { generatePHP, type GeneratorConfig, type Framework } from '@/lib/php-generator';
-import { Download, FileText, Settings, FolderDown, Check, ChevronsUpDown, Copy, CheckCircle } from 'lucide-react';
+import { Download, FileText, Settings, FolderDown, Check, ChevronsUpDown, Copy, CheckCircle, Plus, Trash2 } from 'lucide-react';
 import { FileExplorer } from '@/components/file-explorer';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -29,6 +30,14 @@ const EXAMPLE_FILES = [
 
 const STORAGE_KEY = 'cml-to-php-settings';
 
+interface StoredRegexPatternMapping {
+  id: string;
+  pattern: string;
+  typeFolder?: 'Enum' | 'ValueObject' | 'Entity';
+  subfolder: string;
+  nameReplace?: string;
+}
+
 interface StoredSettings {
   framework: Framework;
   publicProperties: boolean;
@@ -44,6 +53,7 @@ interface StoredSettings {
   groupByType?: boolean;
   phpVersion?: '8.1' | '8.2' | '8.3' | '8.4';
   readonlyValueObjects?: boolean;
+  regexPatternMappings?: StoredRegexPatternMapping[];
   cmlContent?: string;
   selectedFile?: string;
 }
@@ -67,6 +77,7 @@ export default function Home() {
   const [groupByType, setGroupByType] = useState(false);
   const [phpVersion, setPhpVersion] = useState<'8.1' | '8.2' | '8.3' | '8.4'>('8.1');
   const [readonlyValueObjects, setReadonlyValueObjects] = useState(false);
+  const [regexPatternMappings, setRegexPatternMappings] = useState<StoredRegexPatternMapping[]>([]);
   const [phpFiles, setPhpFiles] = useState<GeneratedFile[]>([]);
   const [selectedPhpFile, setSelectedPhpFile] = useState<string>('');
   const outputRef = useRef<HTMLDivElement>(null);
@@ -95,6 +106,7 @@ export default function Home() {
         setGroupByType(settings.groupByType ?? false);
         setPhpVersion(settings.phpVersion || '8.1');
         setReadonlyValueObjects(settings.readonlyValueObjects ?? false);
+        setRegexPatternMappings(settings.regexPatternMappings || []);
         
         // Note: selectedFile and cmlContent are intentionally not persisted
       }
@@ -125,6 +137,7 @@ export default function Home() {
         groupByType,
         phpVersion,
         readonlyValueObjects,
+        regexPatternMappings,
         // Note: cmlContent and selectedFile are intentionally not persisted
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
@@ -146,6 +159,7 @@ export default function Home() {
     groupByType,
     phpVersion,
     readonlyValueObjects,
+    regexPatternMappings,
     isInitialized,
     // Note: cmlContent and selectedFile are intentionally not persisted, so they're not in the dependency array
   ]);
@@ -203,6 +217,11 @@ export default function Home() {
         groupByType,
         phpVersion,
         readonlyValueObjects,
+        regexPatternMappings: regexPatternMappings.map(({ ...mapping }) => ({
+          ...mapping,
+          // Clear typeFolder when groupByType is false
+          typeFolder: groupByType ? mapping.typeFolder : undefined,
+        })),
       };
 
       const files = generatePHP(model, config);
@@ -319,60 +338,62 @@ export default function Home() {
               <CardDescription>Upload a CML file or select an example</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Example Files</Label>
-                <Popover open={open} onOpenChange={setOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      role="combobox"
-                      aria-expanded={open}
-                      className="w-full justify-between"
-                    >
-                      {selectedFile || 'Select an example file...'}
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                    <Command>
-                      <CommandInput placeholder="Search files..." />
-                      <CommandList>
-                        <CommandEmpty>No file found.</CommandEmpty>
-                        <CommandGroup>
-                          {EXAMPLE_FILES.map((file) => (
-                            <CommandItem
-                              key={file}
-                              value={file}
-                              onSelect={() => {
-                                setSelectedFile(file);
-                                loadExampleFile(file);
-                                setOpen(false);
-                              }}
-                            >
-                              <Check
-                                className={cn(
-                                  'mr-2 h-4 w-4',
-                                  selectedFile === file ? 'opacity-100' : 'opacity-0'
-                                )}
-                              />
-                              {file}
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Or Upload Your Own</Label>
-                <input
-                  type="file"
-                  accept=".cml"
-                  onChange={handleFileUpload}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
-                />
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-4">
+                <div className="space-y-2 flex-1 min-w-0">
+                  <Label>Example Files</Label>
+                  <Popover open={open} onOpenChange={setOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={open}
+                        className="w-full justify-between min-w-0"
+                      >
+                        <span className="truncate">
+                          {selectedFile || 'Select an example file...'}
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50 flex-shrink-0" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search files..." />
+                        <CommandList>
+                          <CommandEmpty>No file found.</CommandEmpty>
+                          <CommandGroup>
+                            {EXAMPLE_FILES.map((file) => (
+                              <CommandItem
+                                key={file}
+                                value={file}
+                                onSelect={() => {
+                                  setSelectedFile(file);
+                                  loadExampleFile(file);
+                                  setOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    'mr-2 h-4 w-4',
+                                    selectedFile === file ? 'opacity-100' : 'opacity-0'
+                                  )}
+                                />
+                                {file}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="space-y-2 flex-1 min-w-0">
+                  <Label>Upload Your Own</Label>
+                  <Input
+                    type="file"
+                    accept=".cml"
+                    onChange={handleFileUpload}
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -417,12 +438,11 @@ export default function Home() {
 
                   <div className="space-y-2">
                     <Label>Namespace</Label>
-                    <input
+                    <Input
                       type="text"
                       value={namespace}
                       onChange={(e) => setNamespace(e.target.value)}
                       placeholder="App\\Models"
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     />
                   </div>
 
@@ -477,6 +497,127 @@ export default function Home() {
                       {directoryStructure === 'psr-4' && !groupByType && 'PSR-4 structure with namespace-based directories and namespaces'}
                       {directoryStructure === 'psr-4' && groupByType && 'PSR-4 structure with type folders (Enum/, ValueObject/, Entity/)'}
                     </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Regex Pattern Mappings</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setRegexPatternMappings([
+                            ...regexPatternMappings,
+                            {
+                              id: Date.now().toString(),
+                              pattern: '',
+                              subfolder: '',
+                            },
+                          ]);
+                        }}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add Pattern
+                      </Button>
+                    </div>
+                    {regexPatternMappings.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Add regex patterns to organize files into subfolders based on filename matching.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {regexPatternMappings.map((mapping, index) => (
+                          <div key={mapping.id} className="flex gap-2 items-start p-3 border rounded-md bg-muted/30">
+                            <div className="flex-1 min-w-0 space-y-2">
+                              <div className="space-y-1">
+                                <Label className="text-xs text-muted-foreground">Regex Pattern</Label>
+                                <Input
+                                  type="text"
+                                  value={mapping.pattern}
+                                  onChange={(e) => {
+                                    const updated = [...regexPatternMappings];
+                                    updated[index] = { ...updated[index], pattern: e.target.value };
+                                    setRegexPatternMappings(updated);
+                                  }}
+                                  placeholder="e.g., ^Read"
+                                  className="font-mono"
+                                />
+                              </div>
+                              <div className={groupByType ? "grid grid-cols-2 gap-2" : "space-y-1"}>
+                                {groupByType && (
+                                  <div className="space-y-1 min-w-0 w-full">
+                                    <Label className="text-xs text-muted-foreground">Type Folder (optional)</Label>
+                                    <div className="w-full">
+                                      <Select
+                                        value={mapping.typeFolder || undefined}
+                                        onValueChange={(v) => {
+                                          const updated = [...regexPatternMappings];
+                                          updated[index] = { ...updated[index], typeFolder: v === 'clear' ? undefined : v as 'Enum' | 'ValueObject' | 'Entity' };
+                                          setRegexPatternMappings(updated);
+                                        }}
+                                      >
+                                        <SelectTrigger className="h-8 !w-full min-w-0">
+                                          <SelectValue placeholder="Not selected" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="clear">Not selected</SelectItem>
+                                          <SelectItem value="Enum">Enum</SelectItem>
+                                          <SelectItem value="ValueObject">ValueObject</SelectItem>
+                                          <SelectItem value="Entity">Entity</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  </div>
+                                )}
+                                <div className="space-y-1 min-w-0">
+                                  <Label className="text-xs text-muted-foreground">Subfolder</Label>
+                                  <Input
+                                    type="text"
+                                    value={mapping.subfolder}
+                                    onChange={(e) => {
+                                      const updated = [...regexPatternMappings];
+                                      updated[index] = { ...updated[index], subfolder: e.target.value };
+                                      setRegexPatternMappings(updated);
+                                    }}
+                                    placeholder="e.g., ReadModels"
+                                  />
+                                </div>
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs text-muted-foreground">Name Replace (optional)</Label>
+                                <Input
+                                  type="text"
+                                  value={mapping.nameReplace || ''}
+                                  onChange={(e) => {
+                                    const updated = [...regexPatternMappings];
+                                    updated[index] = { ...updated[index], nameReplace: e.target.value || undefined };
+                                    setRegexPatternMappings(updated);
+                                  }}
+                                  placeholder="e.g., ^Read to remove 'Read' prefix"
+                                  className="font-mono"
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                  Regex pattern to replace in the filename (e.g., ^Read to remove 'Read' prefix)
+                                </p>
+                              </div>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setRegexPatternMappings(regexPatternMappings.filter((_, i) => i !== index));
+                              }}
+                              className="shrink-0 self-start"
+                              title="Remove pattern"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                 </div>
