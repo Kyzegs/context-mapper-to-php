@@ -41,12 +41,18 @@ export interface CMLModel {
   boundedContexts: CMLBoundedContext[];
 }
 
+/** Removes line comments (//) and block comments from CML source before parsing. */
+function stripComments(content: string): string {
+  return content.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, '');
+}
+
 // Parser for CML files
 export function parseCML(content: string): CMLModel {
+  content = stripComments(content);
   const lines = content
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith('//'));
+    .filter((line) => line);
 
   const boundedContexts: CMLBoundedContext[] = [];
   let currentBoundedContext: CMLBoundedContext | null = null;
@@ -147,8 +153,7 @@ export function parseCML(content: string): CMLModel {
 
     // Enum values - must be checked BEFORE property parsing to avoid conflicts
     if (line && currentEnum) {
-      // Remove comments
-      const cleanLine = line.replace(/\/\/.*$/, '').trim();
+      const cleanLine = line.trim();
       if (cleanLine && cleanLine !== '}' && !cleanLine.startsWith('enum ')) {
         if (cleanLine.includes(',')) {
           // Handle comma-separated values
@@ -157,14 +162,14 @@ export function parseCML(content: string): CMLModel {
             .map((v) =>
               v
                 .trim()
-                .replace(/[;,\/\/].*$/, '')
+                .replace(/[;,].*$/, '')
                 .trim()
             )
             .filter((v) => v && v !== '}');
           currentEnum.values.push(...values);
         } else {
           // Single value on its own line
-          const value = cleanLine.replace(/[;,\/\/].*$/, '').trim();
+          const value = cleanLine.replace(/[;,].*$/, '').trim();
           if (value && value !== '}' && !value.includes('enum')) {
             currentEnum.values.push(value);
           }
@@ -199,8 +204,7 @@ export function parseCML(content: string): CMLModel {
 }
 
 function parseProperty(line: string): CMLProperty | null {
-  // Remove comments
-  line = line.replace(/\/\/.*$/, '').trim();
+  line = line.trim();
   if (!line || line === '{' || line === '}' || line === 'aggregateRoot') return null;
 
   const nullable = line.includes('nullable');
