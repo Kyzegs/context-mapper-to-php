@@ -29,6 +29,7 @@ import {
   CheckCircle,
   Plus,
   Trash2,
+  Upload,
 } from 'lucide-react';
 import { FileExplorer } from '@/components/file-explorer';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -74,6 +75,16 @@ interface StoredSettings {
   selectedFile?: string;
 }
 
+const EXPORT_VERSION = 1;
+
+interface ExportConfig {
+  version: number;
+  exportedAt: string;
+  settings: StoredSettings;
+  cmlContent?: string;
+  selectedFile?: string;
+}
+
 export default function Home() {
   const { theme } = useTheme();
   const [cmlContent, setCmlContent] = useState('');
@@ -97,6 +108,7 @@ export default function Home() {
   const [phpFiles, setPhpFiles] = useState<GeneratedFile[]>([]);
   const [selectedPhpFile, setSelectedPhpFile] = useState<string>('');
   const outputRef = useRef<HTMLDivElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [copiedFile, setCopiedFile] = useState<string | null>(null);
 
@@ -207,6 +219,97 @@ export default function Home() {
     reader.onerror = () => {
       toast.error('Failed to read file');
     };
+    reader.readAsText(file);
+  };
+
+  const buildCurrentSettings = (): StoredSettings => ({
+    framework,
+    publicProperties,
+    addGetters,
+    addSetters,
+    namespace,
+    constructorType,
+    constructorPropertyPromotion,
+    doctrineCollectionDocstrings,
+    doctrineAttributes,
+    arrayDocstrings,
+    directoryStructure,
+    groupByType,
+    phpVersion,
+    readonlyValueObjects,
+    regexPatternMappings,
+  });
+
+  const handleExportConfig = () => {
+    const exportData: ExportConfig = {
+      version: EXPORT_VERSION,
+      exportedAt: new Date().toISOString(),
+      settings: buildCurrentSettings(),
+      cmlContent: cmlContent || undefined,
+      selectedFile: selectedFile || undefined,
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cml-to-php-config-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Config exported', {
+      description: 'You can share this file for others to import.',
+    });
+  };
+
+  const handleImportConfig = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    event.target.value = '';
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const raw = e.target?.result as string;
+        const data = JSON.parse(raw) as ExportConfig;
+
+        if (typeof data?.version !== 'number' || !data?.settings) {
+          toast.error('Invalid config file', {
+            description: 'File must contain version and settings.',
+          });
+          return;
+        }
+
+        const s = data.settings;
+        setFramework((s.framework as Framework) || 'plain');
+        setPublicProperties(s.publicProperties ?? false);
+        setAddGetters(s.addGetters ?? true);
+        setAddSetters(s.addSetters ?? true);
+        setNamespace(s.namespace || 'App\\Models');
+        setConstructorType((s.constructorType as ConstructorType) || 'none');
+        setConstructorPropertyPromotion(s.constructorPropertyPromotion ?? false);
+        setDoctrineCollectionDocstrings(s.doctrineCollectionDocstrings ?? false);
+        setDoctrineAttributes(s.doctrineAttributes ?? true);
+        setArrayDocstrings(s.arrayDocstrings ?? false);
+        setDirectoryStructure((s.directoryStructure as DirectoryStructure) || 'flat');
+        setGroupByType(s.groupByType ?? false);
+        setPhpVersion((s.phpVersion as PhpVersion) || '8.1');
+        setReadonlyValueObjects(s.readonlyValueObjects ?? false);
+        setRegexPatternMappings(s.regexPatternMappings ?? []);
+
+        if (data.cmlContent != null && data.cmlContent !== '') {
+          setCmlContent(data.cmlContent);
+          setSelectedFile(data.selectedFile ?? 'imported.cml');
+        }
+
+        toast.success('Config imported', {
+          description: data.cmlContent ? 'Settings and CML content applied.' : 'Settings applied.',
+        });
+      } catch (err) {
+        toast.error('Failed to import config', {
+          description: err instanceof Error ? err.message : 'Invalid JSON or format.',
+        });
+      }
+    };
+    reader.onerror = () => toast.error('Failed to read file');
     reader.readAsText(file);
   };
 
@@ -425,6 +528,23 @@ export default function Home() {
               <CardDescription>Configure PHP code generation options</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={handleExportConfig} variant="outline" size="sm">
+                  <Download className="mr-2 h-4 w-4" />
+                  Export config
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()}>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Import config
+                </Button>
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onChange={handleImportConfig}
+                />
+              </div>
               {/* General Settings Section */}
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold">General Settings</h3>
