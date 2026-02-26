@@ -9,7 +9,15 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { parseCML } from '@/lib/cml-parser';
-import { generatePHP, type GeneratorConfig, type Framework } from '@/lib/php-generator';
+import {
+  generatePHP,
+  type GeneratorConfig,
+  type Framework,
+  type DirectoryStructure,
+  type ConstructorType,
+  type PhpVersion,
+  type TypeFolder,
+} from '@/lib/php-generator';
 import {
   Download,
   FileText,
@@ -41,7 +49,7 @@ const STORAGE_KEY = 'cml-to-php-settings';
 interface StoredRegexPatternMapping {
   id: string;
   pattern: string;
-  typeFolder?: 'Enum' | 'ValueObject' | 'Entity';
+  typeFolder?: TypeFolder;
   subfolder: string;
   nameReplace?: string;
 }
@@ -52,14 +60,14 @@ interface StoredSettings {
   addGetters: boolean;
   addSetters: boolean;
   namespace: string;
-  constructorType: 'none' | 'required' | 'all';
+  constructorType: ConstructorType;
   constructorPropertyPromotion: boolean;
   doctrineCollectionDocstrings: boolean;
   doctrineAttributes?: boolean;
   arrayDocstrings?: boolean;
-  directoryStructure?: 'flat' | 'bounded-context' | 'aggregate' | 'psr-4';
+  directoryStructure?: DirectoryStructure;
   groupByType?: boolean;
-  phpVersion?: '8.1' | '8.2' | '8.3' | '8.4';
+  phpVersion?: PhpVersion;
   readonlyValueObjects?: boolean;
   regexPatternMappings?: StoredRegexPatternMapping[];
   cmlContent?: string;
@@ -76,16 +84,14 @@ export default function Home() {
   const [addGetters, setAddGetters] = useState(true);
   const [addSetters, setAddSetters] = useState(true);
   const [namespace, setNamespace] = useState('App\\Models');
-  const [constructorType, setConstructorType] = useState<'none' | 'required' | 'all'>('none');
+  const [constructorType, setConstructorType] = useState<ConstructorType>('none');
   const [constructorPropertyPromotion, setConstructorPropertyPromotion] = useState(false);
   const [doctrineCollectionDocstrings, setDoctrineCollectionDocstrings] = useState(false);
   const [doctrineAttributes, setDoctrineAttributes] = useState(true);
   const [arrayDocstrings, setArrayDocstrings] = useState(false);
-  const [directoryStructure, setDirectoryStructure] = useState<'flat' | 'bounded-context' | 'aggregate' | 'psr-4'>(
-    'flat'
-  );
+  const [directoryStructure, setDirectoryStructure] = useState<DirectoryStructure>('flat');
   const [groupByType, setGroupByType] = useState(false);
-  const [phpVersion, setPhpVersion] = useState<'8.1' | '8.2' | '8.3' | '8.4'>('8.1');
+  const [phpVersion, setPhpVersion] = useState<PhpVersion>('8.1');
   const [readonlyValueObjects, setReadonlyValueObjects] = useState(false);
   const [regexPatternMappings, setRegexPatternMappings] = useState<StoredRegexPatternMapping[]>([]);
   const [phpFiles, setPhpFiles] = useState<GeneratedFile[]>([]);
@@ -449,7 +455,7 @@ export default function Home() {
 
                   <div className="space-y-2">
                     <Label>PHP Version</Label>
-                    <Select value={phpVersion} onValueChange={(v) => setPhpVersion(v as '8.1' | '8.2' | '8.3' | '8.4')}>
+                    <Select value={phpVersion} onValueChange={(v) => setPhpVersion(v as PhpVersion)}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -466,9 +472,7 @@ export default function Home() {
                     <Label>Directory Structure</Label>
                     <Select
                       value={directoryStructure}
-                      onValueChange={(v) =>
-                        setDirectoryStructure(v as 'flat' | 'bounded-context' | 'aggregate' | 'psr-4')
-                      }
+                      onValueChange={(v) => setDirectoryStructure(v as DirectoryStructure)}
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -477,6 +481,7 @@ export default function Home() {
                         <SelectItem value="flat">Flat (all files in root)</SelectItem>
                         <SelectItem value="bounded-context">By Bounded Context</SelectItem>
                         <SelectItem value="aggregate">By Bounded Context / Aggregate</SelectItem>
+                        <SelectItem value="aggregate-only">By Aggregate only</SelectItem>
                         <SelectItem value="psr-4">PSR-4 (with namespace structure)</SelectItem>
                       </SelectContent>
                     </Select>
@@ -507,6 +512,12 @@ export default function Home() {
                       {directoryStructure === 'aggregate' &&
                         groupByType &&
                         'Files organized by bounded context/aggregate, then by type'}
+                      {directoryStructure === 'aggregate-only' &&
+                        !groupByType &&
+                        'Files organized by aggregate folders only (no bounded context in path)'}
+                      {directoryStructure === 'aggregate-only' &&
+                        groupByType &&
+                        'Files organized by aggregate, then by type (Enum/, ValueObject/, Entity/)'}
                       {directoryStructure === 'psr-4' &&
                         !groupByType &&
                         'PSR-4 structure with namespace-based directories and namespaces'}
@@ -572,8 +583,7 @@ export default function Home() {
                                           const updated = [...regexPatternMappings];
                                           updated[index] = {
                                             ...updated[index],
-                                            typeFolder:
-                                              v === 'clear' ? undefined : (v as 'Enum' | 'ValueObject' | 'Entity'),
+                                            typeFolder: v === 'clear' ? undefined : (v as TypeFolder),
                                           };
                                           setRegexPatternMappings(updated);
                                         }}
@@ -655,7 +665,7 @@ export default function Home() {
                     <Select
                       value={constructorType}
                       onValueChange={(v) => {
-                        setConstructorType(v as 'none' | 'required' | 'all');
+                        setConstructorType(v as ConstructorType);
                         // Reset property promotion when constructor is disabled
                         if (v === 'none') {
                           setConstructorPropertyPromotion(false);

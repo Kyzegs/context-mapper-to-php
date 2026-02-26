@@ -1,11 +1,19 @@
 import { PhpFile, Property, PromotedParameter, Printer } from 'js-php-generator';
-import type { CMLModel, CMLEntity, CMLValueObject, CMLEnum, CMLProperty } from './cml-parser';
+import type { CMLModel, CMLAggregate, CMLEntity, CMLValueObject, CMLEnum, CMLProperty } from './cml-parser';
 
 export type Framework = 'laravel' | 'doctrine' | 'plain';
 
+export type DirectoryStructure = 'flat' | 'bounded-context' | 'aggregate' | 'aggregate-only' | 'psr-4';
+
+export type ConstructorType = 'none' | 'required' | 'all';
+
+export type PhpVersion = '8.1' | '8.2' | '8.3' | '8.4';
+
+export type TypeFolder = 'Enum' | 'ValueObject' | 'Entity';
+
 export interface RegexPatternMapping {
   pattern: string;
-  typeFolder?: 'Enum' | 'ValueObject' | 'Entity';
+  typeFolder?: TypeFolder;
   subfolder: string;
   nameReplace?: string;
 }
@@ -16,14 +24,14 @@ export interface GeneratorConfig {
   addGetters: boolean;
   addSetters: boolean;
   namespace?: string;
-  constructorType: 'none' | 'required' | 'all';
+  constructorType: ConstructorType;
   constructorPropertyPromotion: boolean;
   doctrineCollectionDocstrings?: boolean;
   doctrineAttributes?: boolean;
   arrayDocstrings?: boolean;
-  directoryStructure?: 'flat' | 'bounded-context' | 'aggregate' | 'psr-4';
+  directoryStructure?: DirectoryStructure;
   groupByType?: boolean;
-  phpVersion?: '8.1' | '8.2' | '8.3' | '8.4';
+  phpVersion?: PhpVersion;
   readonlyValueObjects?: boolean;
   regexPatternMappings?: RegexPatternMapping[];
 }
@@ -45,6 +53,9 @@ export function generatePHP(model: CMLModel, config: GeneratorConfig): Generated
       // Determine directory path based on structure option
       const directoryPath = getDirectoryPath(boundedContext.name, aggregate.name, directoryStructure);
 
+      // Set of type names actually generated in this aggregate (processed names); only these get use statements
+      const generatedInAggregate = getGeneratedTypeNamesInAggregate(aggregate, config);
+
       // Generate enums
       for (const enumDef of aggregate.enums) {
         const originalName = enumDef.name;
@@ -52,7 +63,14 @@ export function generatePHP(model: CMLModel, config: GeneratorConfig): Generated
           ? getSubfolderForFile(originalName, 'Enum', config.regexPatternMappings)
           : { subfolder: '' };
         const processedName = applyNameReplace(originalName, mappingResult.nameReplace);
-        const enumFile = generateEnum(enumDef, config, boundedContext.name, aggregate.name, processedName);
+        const enumFile = generateEnum(
+          enumDef,
+          config,
+          boundedContext.name,
+          aggregate.name,
+          processedName,
+          mappingResult.subfolder
+        );
         const filename = `${processedName}.php`;
         const typeFolder = groupByType ? 'Enum/' : '';
         const fullPath = buildFilePath(directoryPath, typeFolder, mappingResult.subfolder, filename);
@@ -71,7 +89,15 @@ export function generatePHP(model: CMLModel, config: GeneratorConfig): Generated
           ? getSubfolderForFile(originalName, 'ValueObject', config.regexPatternMappings)
           : { subfolder: '' };
         const processedName = applyNameReplace(originalName, mappingResult.nameReplace);
-        const voFile = generateValueObject(valueObject, config, boundedContext.name, aggregate.name, processedName);
+        const voFile = generateValueObject(
+          valueObject,
+          config,
+          boundedContext.name,
+          aggregate.name,
+          processedName,
+          mappingResult.subfolder,
+          generatedInAggregate
+        );
         const filename = `${processedName}.php`;
         const typeFolder = groupByType ? 'ValueObject/' : '';
         const fullPath = buildFilePath(directoryPath, typeFolder, mappingResult.subfolder, filename);
@@ -90,7 +116,15 @@ export function generatePHP(model: CMLModel, config: GeneratorConfig): Generated
           ? getSubfolderForFile(originalName, 'Entity', config.regexPatternMappings)
           : { subfolder: '' };
         const processedName = applyNameReplace(originalName, mappingResult.nameReplace);
-        const entityFile = generateEntity(entity, config, boundedContext.name, aggregate.name, processedName);
+        const entityFile = generateEntity(
+          entity,
+          config,
+          boundedContext.name,
+          aggregate.name,
+          processedName,
+          mappingResult.subfolder,
+          generatedInAggregate
+        );
         const filename = `${processedName}.php`;
         const typeFolder = groupByType ? 'Entity/' : '';
         const fullPath = buildFilePath(directoryPath, typeFolder, mappingResult.subfolder, filename);
@@ -107,11 +141,7 @@ export function generatePHP(model: CMLModel, config: GeneratorConfig): Generated
   return files;
 }
 
-function getDirectoryPath(
-  boundedContextName: string,
-  aggregateName: string,
-  structure: 'flat' | 'bounded-context' | 'aggregate' | 'psr-4'
-): string {
+function getDirectoryPath(boundedContextName: string, aggregateName: string, structure: DirectoryStructure): string {
   switch (structure) {
     case 'flat':
       return '';
@@ -124,6 +154,10 @@ function getDirectoryPath(
       // Use PascalCase for directory names
       return `${boundedContextName}/${aggregateName}`;
 
+    case 'aggregate-only':
+      // Only aggregate name, no bounded context in path
+      return aggregateName;
+
     case 'psr-4':
       // PSR-4 structure: namespace-based directory structure
       // Directory structure matches namespace structure (PascalCase)
@@ -134,9 +168,38 @@ function getDirectoryPath(
   }
 }
 
+/** Names of types (processed names) that are generated in this aggregate; only these get use statements. */
+interface AggregateGeneratedTypes {
+  entityNames: Set<string>;
+  enumNames: Set<string>;
+  valueObjectNames: Set<string>;
+}
+
+function getGeneratedTypeNamesInAggregate(aggregate: CMLAggregate, config: GeneratorConfig): AggregateGeneratedTypes {
+  const mappings = config.regexPatternMappings ?? [];
+  const entityNames = new Set<string>();
+  const enumNames = new Set<string>();
+  const valueObjectNames = new Set<string>();
+
+  for (const e of aggregate.entities) {
+    const result = mappings.length ? getSubfolderForFile(e.name, 'Entity', mappings) : { subfolder: '' };
+    entityNames.add(applyNameReplace(e.name, result.nameReplace));
+  }
+  for (const en of aggregate.enums) {
+    const result = mappings.length ? getSubfolderForFile(en.name, 'Enum', mappings) : { subfolder: '' };
+    enumNames.add(applyNameReplace(en.name, result.nameReplace));
+  }
+  for (const vo of aggregate.valueObjects) {
+    const result = mappings.length ? getSubfolderForFile(vo.name, 'ValueObject', mappings) : { subfolder: '' };
+    valueObjectNames.add(applyNameReplace(vo.name, result.nameReplace));
+  }
+
+  return { entityNames, enumNames, valueObjectNames };
+}
+
 function getSubfolderForFile(
   filename: string,
-  fileType: 'Enum' | 'ValueObject' | 'Entity',
+  fileType: TypeFolder,
   mappings: RegexPatternMapping[]
 ): { subfolder: string; nameReplace?: string } {
   // Find the first matching pattern for this file type
@@ -182,6 +245,30 @@ function applyNameReplace(filename: string, nameReplace?: string): string {
   }
 }
 
+/**
+ * Resolves a referenced type name (entity, enum, or value object) using the same
+ * regex pattern mappings used for file names. E.g. ReadMerchant with mapping "^Read"
+ * becomes Merchant.
+ */
+function resolveReferencedTypeName(typeName: string, fileType: TypeFolder, config: GeneratorConfig): string {
+  if (!config.regexPatternMappings?.length) {
+    return typeName;
+  }
+  const mappingResult = getSubfolderForFile(typeName, fileType, config.regexPatternMappings);
+  return applyNameReplace(typeName, mappingResult.nameReplace);
+}
+
+/**
+ * Returns the PHP type/class name to use for a property when it references
+ * another entity, enum, or value object. Applies regex name replacements so
+ * that e.g. relation type ReadMerchant with mapping "^Read" becomes Merchant.
+ */
+function getResolvedReferencedTypeName(prop: CMLProperty, config: GeneratorConfig): string {
+  if (!prop.type) return prop.type || 'mixed';
+  const fileType = prop.isRelation ? 'Entity' : prop.isEnum ? 'Enum' : 'ValueObject';
+  return resolveReferencedTypeName(prop.type, fileType, config);
+}
+
 function buildFilePath(basePath: string, typeFolder: string, subfolder: string, filename: string): string {
   // Remove trailing slashes from typeFolder and subfolder, and filter out empty parts
   const cleanTypeFolder = typeFolder.replace(/\/+$/, '');
@@ -202,28 +289,18 @@ function generateEnum(
   config: GeneratorConfig,
   boundedContextName?: string,
   aggregateName?: string,
-  nameOverride?: string
+  nameOverride?: string,
+  subfolder?: string
 ): string {
   const file = new PhpFile();
   file.setStrictTypes();
 
-  let namespace = config.namespace || 'App\\Models';
-  const directoryStructure = config.directoryStructure || 'flat';
+  const namespace = buildNamespace(config, boundedContextName, aggregateName, 'Enum', subfolder);
+  const ns = file.addNamespace(namespace);
 
-  // For PSR-4 and aggregate structures, append bounded context and aggregate to namespace
-  if ((directoryStructure === 'psr-4' || directoryStructure === 'aggregate') && boundedContextName && aggregateName) {
-    namespace = `${namespace}\\${boundedContextName}\\${aggregateName}`;
-  } else if (directoryStructure === 'bounded-context' && boundedContextName) {
-    namespace = `${namespace}\\${boundedContextName}`;
-  }
-
-  file.addNamespace(namespace);
-
-  // Add enum directly to file (not namespace) for proper rendering
+  // Add enum to the namespace so it is rendered with the correct namespace
   const enumName = nameOverride || enumDef.name;
-  const enumType = file.addEnum(enumName);
-  // Set the namespace on the enum so it appears in the correct namespace
-  enumType.namespace = namespace;
+  const enumType = ns.addEnum(enumName);
   // Make it a string-backed enum
   enumType.setType('string');
 
@@ -234,9 +311,13 @@ function generateEnum(
     enumType.addCase(cleanValue, stringValue);
   }
 
-  // Use Printer to ensure proper rendering with namespace
+  // js-php-generator's Printer.printFile() does not output enums that are inside
+  // namespaces (it only prints namespace.classes and namespace.functions).
+  // So we build the file manually: namespace declaration + enum body.
   const printer = new Printer();
-  return printer.printFile(file);
+  const namespaceDecl = namespace ? `namespace ${namespace};\n\n` : '';
+  const enumBody = printer.printClass(enumType, ns);
+  return `<?php\n\n${file.strictTypes ? 'declare(strict_types=1);\n\n' : ''}${namespaceDecl}${enumBody}`;
 }
 
 function generateValueObject(
@@ -244,16 +325,31 @@ function generateValueObject(
   config: GeneratorConfig,
   boundedContextName?: string,
   aggregateName?: string,
-  nameOverride?: string
+  nameOverride?: string,
+  subfolder?: string,
+  generatedInAggregate?: AggregateGeneratedTypes
 ): string {
   const file = new PhpFile();
   file.setStrictTypes();
 
-  const namespace = buildNamespace(config, boundedContextName, aggregateName);
-  file.addNamespace(namespace);
-
+  const namespace = buildNamespace(config, boundedContextName, aggregateName, 'ValueObject', subfolder);
+  if (namespace) {
+    file.addNamespace(namespace);
+  }
+  const ns = namespace ? file.getNamespace(namespace)! : null;
+  if (generatedInAggregate) {
+    addUseStatementsForReferencedTypes(
+      ns,
+      namespace ?? '',
+      valueObject.properties,
+      config,
+      boundedContextName,
+      aggregateName,
+      generatedInAggregate
+    );
+  }
   const className = nameOverride || valueObject.name;
-  const class_ = file.addNamespace(namespace).addClass(className);
+  const class_ = ns ? ns.addClass(className) : file.addClass(className);
   class_.setFinal();
 
   // Apply readonly class for PHP 8.2+ if enabled
@@ -366,16 +462,31 @@ function generateEntity(
   config: GeneratorConfig,
   boundedContextName?: string,
   aggregateName?: string,
-  nameOverride?: string
+  nameOverride?: string,
+  subfolder?: string,
+  generatedInAggregate?: AggregateGeneratedTypes
 ): string {
   const file = new PhpFile();
   file.setStrictTypes();
 
-  const namespace = buildNamespace(config, boundedContextName, aggregateName);
-  file.addNamespace(namespace);
-
+  const namespace = buildNamespace(config, boundedContextName, aggregateName, 'Entity', subfolder);
+  if (namespace) {
+    file.addNamespace(namespace);
+  }
+  const ns = namespace ? file.getNamespace(namespace)! : null;
+  if (generatedInAggregate) {
+    addUseStatementsForReferencedTypes(
+      ns,
+      namespace ?? '',
+      entity.properties,
+      config,
+      boundedContextName,
+      aggregateName,
+      generatedInAggregate
+    );
+  }
   const className = nameOverride || entity.name;
-  const class_ = file.addNamespace(namespace).addClass(className);
+  const class_ = ns ? ns.addClass(className) : file.addClass(className);
 
   // Framework-specific setup
   if (config.framework === 'laravel') {
@@ -439,9 +550,10 @@ function generateEntity(
     } else if (config.framework === 'doctrine') {
       if (config.doctrineAttributes !== false) {
         if (prop.isRelation) {
+          const relationType = getResolvedReferencedTypeName(prop, config);
           if (prop.isCollection) {
             phpProp.addAttribute('Doctrine\\ORM\\Mapping\\OneToMany', [
-              `targetEntity: ${prop.type}::class`,
+              `targetEntity: ${relationType}::class`,
               `mappedBy: '${getInversePropertyName(entity.name)}'`,
             ]);
             phpProp.setType('Doctrine\\Common\\Collections\\Collection');
@@ -449,7 +561,7 @@ function generateEntity(
             // Add collection docstring if enabled
             addCollectionDocstring(phpProp, prop, 'var', config);
           } else {
-            phpProp.addAttribute('Doctrine\\ORM\\Mapping\\ManyToOne', [`targetEntity: ${prop.type}::class`]);
+            phpProp.addAttribute('Doctrine\\ORM\\Mapping\\ManyToOne', [`targetEntity: ${relationType}::class`]);
           }
         } else if (prop.isCollection) {
           // Primitive collection (e.g. List<string>) – store as JSON, PHP type is array
@@ -563,14 +675,15 @@ function generateEntity(
   if (config.framework === 'laravel') {
     for (const prop of entity.properties) {
       if (prop.isRelation) {
+        const relationType = getResolvedReferencedTypeName(prop, config);
         const relationMethod = class_.addMethod(prop.name);
         relationMethod.setPublic();
         if (prop.isCollection) {
           relationMethod.setReturnType('Illuminate\\Database\\Eloquent\\Relations\\HasMany');
-          relationMethod.setBody(`return $this->hasMany(${prop.type}::class);`);
+          relationMethod.setBody(`return $this->hasMany(${relationType}::class);`);
         } else {
           relationMethod.setReturnType('Illuminate\\Database\\Eloquent\\Relations\\BelongsTo');
-          relationMethod.setBody(`return $this->belongsTo(${prop.type}::class);`);
+          relationMethod.setBody(`return $this->belongsTo(${relationType}::class);`);
         }
       }
     }
@@ -585,17 +698,118 @@ function generateEntity(
   return printer.printFile(file);
 }
 
-function buildNamespace(config: GeneratorConfig, boundedContextName?: string, aggregateName?: string): string {
-  let namespace = config.namespace || 'App\\Models';
+function buildNamespace(
+  config: GeneratorConfig,
+  boundedContextName?: string,
+  aggregateName?: string,
+  typeSegment?: TypeFolder,
+  subfolder?: string
+): string {
   const directoryStructure = config.directoryStructure || 'flat';
+  const parts: string[] = [];
 
+  if (config.namespace !== undefined && config.namespace !== '') {
+    parts.push(config.namespace);
+  }
   if ((directoryStructure === 'psr-4' || directoryStructure === 'aggregate') && boundedContextName && aggregateName) {
-    namespace = `${namespace}\\${boundedContextName}\\${aggregateName}`;
+    parts.push(boundedContextName, aggregateName);
+  } else if (directoryStructure === 'aggregate-only' && aggregateName) {
+    parts.push(aggregateName);
   } else if (directoryStructure === 'bounded-context' && boundedContextName) {
-    namespace = `${namespace}\\${boundedContextName}`;
+    parts.push(boundedContextName);
+  }
+  if (config.groupByType && typeSegment) {
+    parts.push(typeSegment);
+  }
+  if (subfolder && subfolder.trim()) {
+    parts.push(subfolder.trim().replace(/\//g, '\\'));
   }
 
-  return namespace;
+  return parts.join('\\');
+}
+
+/**
+ * Returns the namespace where a referenced type (entity, enum, value object) would be generated,
+ * including subfolder when the type matches a regex pattern mapping.
+ */
+function getNamespaceForReferencedType(
+  originalTypeName: string,
+  typeFolder: TypeFolder,
+  config: GeneratorConfig,
+  boundedContextName?: string,
+  aggregateName?: string
+): string {
+  const mappingResult = config.regexPatternMappings
+    ? getSubfolderForFile(originalTypeName, typeFolder, config.regexPatternMappings)
+    : { subfolder: '' };
+  return buildNamespace(config, boundedContextName, aggregateName, typeFolder, mappingResult.subfolder);
+}
+
+/** True if the type is a primitive or already fully qualified (contains \), so no use statement needed. */
+function isBuiltInOrFullyQualifiedType(type: string): boolean {
+  if (!type || type.includes('\\')) return true;
+  const lower = type.toLowerCase();
+  return [
+    'string',
+    'int',
+    'integer',
+    'bool',
+    'boolean',
+    'float',
+    'double',
+    'datetime',
+    'date',
+    'clob',
+    'mixed',
+    'array',
+  ].includes(lower);
+}
+
+/**
+ * Adds use statements only for types that are actually generated in this aggregate (entities, enums,
+ * value objects). Types like UUID that are not defined in the aggregate are not imported.
+ */
+function addUseStatementsForReferencedTypes(
+  ns: { addUse: (name: string, alias?: string, type?: 'class' | 'function' | 'constant') => void } | null,
+  currentNamespace: string,
+  properties: CMLProperty[],
+  config: GeneratorConfig,
+  boundedContextName: string | undefined,
+  aggregateName: string | undefined,
+  generatedInAggregate: AggregateGeneratedTypes
+): void {
+  if (!ns || !currentNamespace) return;
+
+  const added = new Set<string>();
+  for (const prop of properties) {
+    if (!prop.type || isBuiltInOrFullyQualifiedType(prop.type)) continue;
+
+    const resolvedName = getResolvedReferencedTypeName(prop, config);
+
+    // Infer kind from which generated set contains this type (CML often uses "- Type name" for
+    // enums/value objects too, so prop.isRelation/isEnum alone would misclassify).
+    let fileType: TypeFolder | null = null;
+    if (generatedInAggregate.entityNames.has(resolvedName)) fileType = 'Entity';
+    else if (generatedInAggregate.enumNames.has(resolvedName)) fileType = 'Enum';
+    else if (generatedInAggregate.valueObjectNames.has(resolvedName)) fileType = 'ValueObject';
+
+    if (!fileType) continue;
+
+    const targetNamespace = getNamespaceForReferencedType(
+      prop.type,
+      fileType,
+      config,
+      boundedContextName,
+      aggregateName
+    );
+
+    if (targetNamespace === currentNamespace) continue;
+
+    const fullClassName = `${targetNamespace}\\${resolvedName}`;
+    if (added.has(fullClassName)) continue;
+    added.add(fullClassName);
+    ns.addUse(fullClassName, undefined, 'class');
+  }
 }
 
 type Commentable = { addComment: (comment: string) => void };
@@ -608,21 +822,22 @@ function addCollectionDocstring(
 ): void {
   if (!prop.isCollection) return;
 
+  const elementType = prop.isRelation || prop.isEnum ? getResolvedReferencedTypeName(prop, config) : prop.type;
   const arrayDoc =
     docType === 'param'
-      ? `@param array<int, ${prop.type}> $${prop.name}`
+      ? `@param array<int, ${elementType}> $${prop.name}`
       : docType === 'return'
-        ? `@return array<int, ${prop.type}>`
-        : `@var array<int, ${prop.type}>`;
+        ? `@return array<int, ${elementType}>`
+        : `@var array<int, ${elementType}>`;
 
   if (config.framework === 'doctrine') {
     if (prop.isRelation && config.doctrineCollectionDocstrings) {
       const doc =
         docType === 'param'
-          ? `@param \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}> $${prop.name}`
+          ? `@param \\Doctrine\\Common\\Collections\\Collection<array-key, ${elementType}> $${prop.name}`
           : docType === 'return'
-            ? `@return \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}>`
-            : `@var \\Doctrine\\Common\\Collections\\Collection<array-key, ${prop.type}>`;
+            ? `@return \\Doctrine\\Common\\Collections\\Collection<array-key, ${elementType}>`
+            : `@var \\Doctrine\\Common\\Collections\\Collection<array-key, ${elementType}>`;
       target.addComment(doc);
     } else if (!prop.isRelation && config.arrayDocstrings) {
       target.addComment(arrayDoc);
@@ -689,8 +904,8 @@ function mapTypeToPHP(config: GeneratorConfig, prop: CMLProperty): string {
   if (lowerType === 'date') return '\\DateTime';
   if (lowerType === 'clob') return 'string';
 
-  // Relations and custom types
-  return prop.type;
+  // Relations and custom types: apply regex mappings so e.g. ReadMerchant -> Merchant
+  return getResolvedReferencedTypeName(prop, config);
 }
 
 function mapDoctrineType(type: string): string {
