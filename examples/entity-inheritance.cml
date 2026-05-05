@@ -1,0 +1,13 @@
+BoundedContext InheritanceDemo {
+    Aggregate SampleAgg {
+        Entity AbstractBase {
+            aggregateRoot
+            String name
+        }
+        Entity ConcreteChild extends @AbstractBase {
+            String extra
+        }
+        Entity LeafSubclass extends @AbstractBase {
+        }
+    }
+}

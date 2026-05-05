@@ -23,6 +23,10 @@ export interface CMLEntity {
   name: string;
   isAggregateRoot: boolean;
   properties: CMLProperty[];
+  /** Raw CML parent entity name from `extends @ParentName` */
+  extendsEntity?: string;
+  /** True when another entity in the same aggregate extends this entity */
+  isAbstract?: boolean;
 }
 
 export interface CMLAggregate {
@@ -39,6 +43,33 @@ export interface CMLBoundedContext {
 
 export interface CMLModel {
   boundedContexts: CMLBoundedContext[];
+}
+
+/** Marks entities that are extended by another entity in the same aggregate as abstract. */
+export function annotateEntityAbstractFlags(model: CMLModel): void {
+  for (const bc of model.boundedContexts) {
+    for (const agg of bc.aggregates) {
+      const extendedParents = new Set<string>();
+      for (const e of agg.entities) {
+        if (e.extendsEntity) extendedParents.add(e.extendsEntity);
+      }
+      for (const e of agg.entities) {
+        if (extendedParents.has(e.name)) {
+          e.isAbstract = true;
+        }
+      }
+    }
+  }
+}
+
+function parseEntityDeclaration(line: string): { name: string; extendsEntity?: string } {
+  const head = line.replace(/\{.*$/, '').trim();
+  const m = head.match(/^Entity\s+(\w+)(?:\s+extends\s+@(\w+))?$/);
+  if (!m) {
+    const fallback = head.match(/Entity\s+(\w+)/);
+    return { name: fallback?.[1] ?? '', extendsEntity: undefined };
+  }
+  return { name: m[1], extendsEntity: m[2] };
 }
 
 /** Removes line comments (//) and block comments from CML source before parsing. */
@@ -92,11 +123,12 @@ export function parseCML(content: string): CMLModel {
 
     // Entity
     if (line.startsWith('Entity ')) {
-      const name = line.match(/Entity\s+(\w+)/)?.[1] || '';
+      const { name, extendsEntity } = parseEntityDeclaration(line);
       currentEntity = {
         name,
         isAggregateRoot: false,
         properties: [],
+        ...(extendsEntity ? { extendsEntity } : {}),
       };
       if (currentAggregate) {
         currentAggregate.entities.push(currentEntity);
@@ -200,6 +232,7 @@ export function parseCML(content: string): CMLModel {
     }
   }
 
+  annotateEntityAbstractFlags({ boundedContexts });
   return { boundedContexts };
 }
 

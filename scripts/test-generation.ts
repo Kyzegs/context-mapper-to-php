@@ -130,6 +130,43 @@ async function testFile(filePath: string): Promise<TestResult> {
           }
         }
 
+        if (fileName === 'entity-inheritance.cml') {
+          const abstractBase = files.find((f) => f.filename === 'AbstractBase.php' && f.type === 'entity');
+          const child = files.find((f) => f.filename === 'ConcreteChild.php' && f.type === 'entity');
+          const leaf = files.find((f) => f.filename === 'LeafSubclass.php' && f.type === 'entity');
+          if (!abstractBase || !/abstract\s+class\s+AbstractBase\b/.test(abstractBase.content)) {
+            throw new Error(`[${config.framework}] AbstractBase must be abstract (${configName})`);
+          }
+          if (!child || !/class\s+ConcreteChild\s+extends\s+AbstractBase\b/.test(child.content)) {
+            throw new Error(`[${config.framework}] ConcreteChild must extend AbstractBase (${configName})`);
+          }
+          if (!leaf || !/class\s+LeafSubclass\s+extends\s+AbstractBase\b/.test(leaf.content)) {
+            throw new Error(`[${config.framework}] LeafSubclass must extend AbstractBase (${configName})`);
+          }
+          if (config.framework === 'laravel') {
+            if (/class\s+ConcreteChild\s+extends\s+Illuminate\\\\Database\\\\Eloquent\\\\Model\b/.test(child.content)) {
+              throw new Error(`[laravel] ConcreteChild must extend AbstractBase, not Model (${configName})`);
+            }
+          }
+          if (
+            config.framework === 'doctrine' &&
+            config.doctrineAttributes !== false &&
+            !abstractBase.content.includes('MappedSuperclass')
+          ) {
+            throw new Error(`[doctrine] AbstractBase must use MappedSuperclass (${configName})`);
+          }
+          if (config.constructorType !== 'none') {
+            if (!child?.content.includes('parent::__construct')) {
+              throw new Error(`[${config.framework}] ConcreteChild must call parent::__construct (${configName})`);
+            }
+            if (/public\s+function\s+__construct\b/.test(leaf?.content ?? '')) {
+              throw new Error(
+                `[${config.framework}] LeafSubclass must omit redundant forwarding constructor (${configName})`
+              );
+            }
+          }
+        }
+
         const totalChars = files.reduce((sum, f) => sum + f.content.length, 0);
         console.log(`      ✓ Generated ${files.length} file(s) with ${totalChars} total characters`);
         result.configs.push({

@@ -63,6 +63,7 @@ interface StoredSettings {
   namespace: string;
   constructorType: ConstructorType;
   constructorPropertyPromotion: boolean;
+  inheritConstructorParameters?: boolean;
   doctrineCollectionDocstrings: boolean;
   doctrineAttributes?: boolean;
   arrayDocstrings?: boolean;
@@ -97,6 +98,7 @@ export default function Home() {
   const [namespace, setNamespace] = useState('App\\Models');
   const [constructorType, setConstructorType] = useState<ConstructorType>('none');
   const [constructorPropertyPromotion, setConstructorPropertyPromotion] = useState(false);
+  const [inheritConstructorParameters, setInheritConstructorParameters] = useState(true);
   const [doctrineCollectionDocstrings, setDoctrineCollectionDocstrings] = useState(false);
   const [doctrineAttributes, setDoctrineAttributes] = useState(true);
   const [arrayDocstrings, setArrayDocstrings] = useState(false);
@@ -127,6 +129,7 @@ export default function Home() {
         setNamespace(settings.namespace || 'App\\Models');
         setConstructorType(settings.constructorType || 'none');
         setConstructorPropertyPromotion(settings.constructorPropertyPromotion ?? false);
+        setInheritConstructorParameters(settings.inheritConstructorParameters ?? true);
         setDoctrineCollectionDocstrings(settings.doctrineCollectionDocstrings ?? false);
         setDoctrineAttributes(settings.doctrineAttributes ?? true);
         setArrayDocstrings(settings.arrayDocstrings ?? false);
@@ -158,6 +161,7 @@ export default function Home() {
         namespace,
         constructorType,
         constructorPropertyPromotion,
+        inheritConstructorParameters,
         doctrineCollectionDocstrings,
         doctrineAttributes,
         arrayDocstrings,
@@ -180,6 +184,7 @@ export default function Home() {
     namespace,
     constructorType,
     constructorPropertyPromotion,
+    inheritConstructorParameters,
     doctrineCollectionDocstrings,
     doctrineAttributes,
     arrayDocstrings,
@@ -230,6 +235,7 @@ export default function Home() {
     namespace,
     constructorType,
     constructorPropertyPromotion,
+    inheritConstructorParameters,
     doctrineCollectionDocstrings,
     doctrineAttributes,
     arrayDocstrings,
@@ -286,6 +292,7 @@ export default function Home() {
         setNamespace(s.namespace || 'App\\Models');
         setConstructorType((s.constructorType as ConstructorType) || 'none');
         setConstructorPropertyPromotion(s.constructorPropertyPromotion ?? false);
+        setInheritConstructorParameters(s.inheritConstructorParameters ?? true);
         setDoctrineCollectionDocstrings(s.doctrineCollectionDocstrings ?? false);
         setDoctrineAttributes(s.doctrineAttributes ?? true);
         setArrayDocstrings(s.arrayDocstrings ?? false);
@@ -329,6 +336,7 @@ export default function Home() {
         namespace: namespace || undefined,
         constructorType,
         constructorPropertyPromotion: constructorType !== 'none' ? constructorPropertyPromotion : false,
+        inheritConstructorParameters: constructorType !== 'none' ? inheritConstructorParameters : undefined,
         doctrineCollectionDocstrings: framework === 'doctrine' ? doctrineCollectionDocstrings : false,
         doctrineAttributes: framework === 'doctrine' ? doctrineAttributes : undefined,
         arrayDocstrings: framework === 'plain' ? arrayDocstrings : undefined,
@@ -806,16 +814,28 @@ export default function Home() {
                   </div>
 
                   {constructorType !== 'none' && (
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="property-promotion"
-                        checked={constructorPropertyPromotion}
-                        onCheckedChange={(checked) => setConstructorPropertyPromotion(checked === true)}
-                      />
-                      <Label htmlFor="property-promotion" className="cursor-pointer">
-                        Constructor property promotion
-                      </Label>
-                    </div>
+                    <>
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="inherit-constructor-params"
+                          checked={inheritConstructorParameters}
+                          onCheckedChange={(checked) => setInheritConstructorParameters(checked === true)}
+                        />
+                        <Label htmlFor="inherit-constructor-params" className="cursor-pointer">
+                          Include inherited constructor parameters (parent::__construct)
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="property-promotion"
+                          checked={constructorPropertyPromotion}
+                          onCheckedChange={(checked) => setConstructorPropertyPromotion(checked === true)}
+                        />
+                        <Label htmlFor="property-promotion" className="cursor-pointer">
+                          Constructor property promotion
+                        </Label>
+                      </div>
+                    </>
                   )}
 
                   <div className="flex items-center space-x-2">

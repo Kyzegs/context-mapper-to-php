@@ -34,6 +34,11 @@ export interface GeneratorConfig {
   phpVersion?: PhpVersion;
   readonlyValueObjects?: boolean;
   regexPatternMappings?: RegexPatternMapping[];
+  /**
+   * When enabled (default if omitted while `constructorType` is not `none`), subclass entities include
+   * constructor parameters from ancestor entities and call `parent::__construct(...)` with those values.
+   */
+  inheritConstructorParameters?: boolean;
 }
 
 export interface GeneratedFile {
@@ -123,7 +128,8 @@ export function generatePHP(model: CMLModel, config: GeneratorConfig): Generated
           aggregate.name,
           processedName,
           mappingResult.subfolder,
-          generatedInAggregate
+          generatedInAggregate,
+          aggregate
         );
         const filename = `${processedName}.php`;
         const typeFolder = groupByType ? 'Entity/' : '';
@@ -267,6 +273,83 @@ function getResolvedReferencedTypeName(prop: CMLProperty, config: GeneratorConfi
   if (!prop.type) return prop.type || 'mixed';
   const fileType = prop.isRelation ? 'Entity' : prop.isEnum ? 'Enum' : 'ValueObject';
   return resolveReferencedTypeName(prop.type, fileType, config);
+}
+
+/** Processed PHP class name and subfolder for an entity (same rules as generated files). */
+function resolveProcessedEntityMapping(
+  rawEntityName: string,
+  config: GeneratorConfig
+): { processedName: string; subfolder: string } {
+  const mappings = config.regexPatternMappings ?? [];
+  const result = mappings.length ? getSubfolderForFile(rawEntityName, 'Entity', mappings) : { subfolder: '' };
+  return {
+    processedName: applyNameReplace(rawEntityName, result.nameReplace),
+    subfolder: result.subfolder,
+  };
+}
+
+function getEntityByName(aggregate: CMLAggregate, name: string): CMLEntity | undefined {
+  return aggregate.entities.find((e) => e.name === name);
+}
+
+/** Ancestors from root to direct parent (for constructor parameter order). */
+function getAncestorEntitiesRootFirst(aggregate: CMLAggregate, entity: CMLEntity): CMLEntity[] {
+  const chainRev: CMLEntity[] = [];
+  let cur: CMLEntity | undefined = entity;
+  while (cur?.extendsEntity) {
+    const p = getEntityByName(aggregate, cur.extendsEntity);
+    if (!p) break;
+    chainRev.push(p);
+    cur = p;
+  }
+  return chainRev.reverse();
+}
+
+function filterPropertiesForConstructor(properties: CMLProperty[], config: GeneratorConfig): CMLProperty[] {
+  const eligible = properties.filter((prop) => !(prop.isRelation && config.framework === 'laravel'));
+  if (config.constructorType === 'required') {
+    return eligible.filter((p) => !p.nullable);
+  }
+  return eligible;
+}
+
+/** Doctrine collection initialization for this entity's properties (excludes names passed via constructor). */
+function buildDoctrineCollectionInitLines(
+  entity: CMLEntity,
+  ownConstructorPropNames: Set<string>,
+  config: GeneratorConfig
+): string {
+  if (config.framework !== 'doctrine') return '';
+  let lines = '';
+  for (const prop of entity.properties) {
+    if (prop.isCollection && prop.isRelation) {
+      lines += `$this->${prop.name} = new \\Doctrine\\Common\\Collections\\ArrayCollection();\n`;
+    } else if (prop.isCollection && !prop.isRelation && !ownConstructorPropNames.has(prop.name)) {
+      lines += `$this->${prop.name} = [];\n`;
+    }
+  }
+  return lines;
+}
+
+/** Import parent entity when it lives in a different namespace (e.g. regex subfolder). */
+function addUseStatementForExtendedParent(
+  ns: { addUse: (name: string, alias?: string, type?: 'class' | 'function' | 'constant') => void } | null,
+  currentNamespace: string,
+  parentProcessedName: string,
+  parentSubfolder: string,
+  config: GeneratorConfig,
+  boundedContextName: string | undefined,
+  aggregateName: string | undefined,
+  generatedInAggregate: AggregateGeneratedTypes
+): void {
+  if (!ns || !currentNamespace) return;
+  if (!generatedInAggregate.entityNames.has(parentProcessedName)) return;
+
+  const parentNamespace = buildNamespace(config, boundedContextName, aggregateName, 'Entity', parentSubfolder);
+  if (parentNamespace === currentNamespace) return;
+
+  const fullClassName = `${parentNamespace}\\${parentProcessedName}`;
+  ns.addUse(fullClassName, undefined, 'class');
 }
 
 function buildFilePath(basePath: string, typeFolder: string, subfolder: string, filename: string): string {
@@ -464,7 +547,8 @@ function generateEntity(
   aggregateName?: string,
   nameOverride?: string,
   subfolder?: string,
-  generatedInAggregate?: AggregateGeneratedTypes
+  generatedInAggregate?: AggregateGeneratedTypes,
+  aggregate?: CMLAggregate
 ): string {
   const file = new PhpFile();
   file.setStrictTypes();
@@ -474,6 +558,18 @@ function generateEntity(
     file.addNamespace(namespace);
   }
   const ns = namespace ? file.getNamespace(namespace)! : null;
+
+  const parentResolved =
+    Boolean(entity.extendsEntity) && Boolean(aggregate?.entities.some((e) => e.name === entity.extendsEntity));
+
+  let parentProcessedName = '';
+  let parentSubfolder = '';
+  if (entity.extendsEntity) {
+    const pm = resolveProcessedEntityMapping(entity.extendsEntity, config);
+    parentProcessedName = pm.processedName;
+    parentSubfolder = pm.subfolder;
+  }
+
   if (generatedInAggregate) {
     addUseStatementsForReferencedTypes(
       ns,
@@ -484,35 +580,72 @@ function generateEntity(
       aggregateName,
       generatedInAggregate
     );
+    if (entity.extendsEntity && parentResolved) {
+      addUseStatementForExtendedParent(
+        ns,
+        namespace ?? '',
+        parentProcessedName,
+        parentSubfolder,
+        config,
+        boundedContextName,
+        aggregateName,
+        generatedInAggregate
+      );
+    }
   }
+
   const className = nameOverride || entity.name;
   const class_ = ns ? ns.addClass(className) : file.addClass(className);
 
-  // Framework-specific setup
-  if (config.framework === 'laravel') {
-    class_.setExtends('Illuminate\\Database\\Eloquent\\Model');
-    class_.addComment('@property-read int $id');
-  } else if (config.framework === 'doctrine' && config.doctrineAttributes !== false) {
-    class_.addAttribute('Doctrine\\ORM\\Mapping\\Entity');
-    class_.addAttribute('Doctrine\\ORM\\Mapping\\Table', [`name: '${toSnakeCase(entity.name)}'`]);
+  if (entity.isAbstract) {
+    class_.setAbstract(true);
   }
 
-  // Get properties that should be in constructor (excluding Laravel relations)
-  const propertiesForConstructor =
-    config.constructorType !== 'none'
-      ? entity.properties.filter((prop) => !(prop.isRelation && config.framework === 'laravel'))
-      : [];
+  if (entity.extendsEntity && !parentResolved) {
+    class_.addComment(`WARNING: extends references unknown entity "${entity.extendsEntity}" in this aggregate`);
+  }
 
-  // Determine which properties to include in constructor
-  const propertiesToInclude =
-    config.constructorType === 'required'
-      ? propertiesForConstructor.filter((prop) => !prop.nullable)
-      : propertiesForConstructor;
+  if (config.framework === 'laravel') {
+    if (parentResolved && parentProcessedName) {
+      class_.setExtends(parentProcessedName);
+    } else {
+      class_.setExtends('Illuminate\\Database\\Eloquent\\Model');
+    }
+    class_.addComment('@property-read int $id');
+  } else if (config.framework === 'plain') {
+    if (parentResolved && parentProcessedName) {
+      class_.setExtends(parentProcessedName);
+    }
+  } else if (config.framework === 'doctrine') {
+    if (parentResolved && parentProcessedName) {
+      class_.setExtends(parentProcessedName);
+    }
+    if (config.doctrineAttributes !== false) {
+      if (entity.isAbstract) {
+        class_.addAttribute('Doctrine\\ORM\\Mapping\\MappedSuperclass');
+      } else {
+        class_.addAttribute('Doctrine\\ORM\\Mapping\\Entity');
+        class_.addAttribute('Doctrine\\ORM\\Mapping\\Table', [`name: '${toSnakeCase(entity.name)}'`]);
+      }
+    }
+  }
 
-  // Track promoted properties to avoid duplicates
+  const inheritConstructorParameters =
+    config.constructorType !== 'none' && (config.inheritConstructorParameters ?? true);
+
+  const ancestorEntities =
+    aggregate && inheritConstructorParameters && parentResolved ? getAncestorEntitiesRootFirst(aggregate, entity) : [];
+
+  const parentChainConstructorProps: CMLProperty[] = ancestorEntities.flatMap((anc) =>
+    filterPropertiesForConstructor(anc.properties, config)
+  );
+
+  const ownConstructorProps: CMLProperty[] =
+    config.constructorType !== 'none' ? filterPropertiesForConstructor(entity.properties, config) : [];
+
   const promotedProperties = new Set(
     config.constructorPropertyPromotion && config.constructorType !== 'none'
-      ? propertiesToInclude.map((prop) => prop.name)
+      ? ownConstructorProps.map((prop) => prop.name)
       : []
   );
 
@@ -584,44 +717,64 @@ function generateEntity(
 
   // Add constructor based on config
   if (config.constructorType !== 'none') {
-    const constructor = class_.addMethod('__construct');
-    constructor.setPublic();
+    const parentArgProps = parentChainConstructorProps;
+    const ownArgProps = ownConstructorProps;
+
+    const includedOwnNames = new Set(ownArgProps.map((p) => p.name));
+    const doctrineChildLines = buildDoctrineCollectionInitLines(entity, includedOwnNames, config);
 
     let constructorBody = '';
 
-    // Add Doctrine collection initialization (relation collections only; primitive collections use array)
-    if (config.framework === 'doctrine') {
-      const includedNames = new Set(propertiesToInclude.map((p) => p.name));
-      for (const prop of entity.properties) {
-        if (prop.isCollection && prop.isRelation) {
-          constructorBody += `$this->${prop.name} = new \\Doctrine\\Common\\Collections\\ArrayCollection();\n`;
-        } else if (prop.isCollection && !prop.isRelation && !includedNames.has(prop.name)) {
-          constructorBody += `$this->${prop.name} = [];\n`;
-        }
-      }
+    if (parentArgProps.length > 0) {
+      const args = parentArgProps.map((p) => `$${p.name}`).join(', ');
+      constructorBody += `parent::__construct(${args});\n`;
     }
 
-    // Add constructor parameters
-    for (const prop of propertiesToInclude) {
-      const param = config.constructorPropertyPromotion
-        ? constructor.addPromotedParameter(prop.name)
-        : constructor.addParameter(prop.name);
+    constructorBody += doctrineChildLines;
 
-      setupParameter(param, prop, config);
-
-      if (config.constructorPropertyPromotion) {
-        setVisibility(param as PromotedParameter, config.publicProperties === true);
-      }
-
-      addCollectionDocstring(param, prop, 'var', config);
-
+    for (const prop of ownArgProps) {
       if (!config.constructorPropertyPromotion) {
         constructorBody += `$this->${prop.name} = $${prop.name};\n`;
       }
     }
 
-    if (constructorBody) {
-      constructor.setBody(constructorBody);
+    const hasAnyParams = parentArgProps.length + ownArgProps.length > 0;
+    const hasNonEmptyBody = constructorBody.trim().length > 0;
+
+    const omitRedundantSubclassConstructor =
+      parentResolved &&
+      inheritConstructorParameters &&
+      ownArgProps.length === 0 &&
+      parentArgProps.length > 0 &&
+      doctrineChildLines.trim() === '';
+
+    if (!omitRedundantSubclassConstructor && (hasAnyParams || hasNonEmptyBody)) {
+      const constructor = class_.addMethod('__construct');
+      constructor.setPublic();
+
+      for (const prop of parentArgProps) {
+        const param = constructor.addParameter(prop.name);
+        setupParameter(param, prop, config);
+        addCollectionDocstring(param, prop, 'var', config);
+      }
+
+      for (const prop of ownArgProps) {
+        const param = config.constructorPropertyPromotion
+          ? constructor.addPromotedParameter(prop.name)
+          : constructor.addParameter(prop.name);
+
+        setupParameter(param, prop, config);
+
+        if (config.constructorPropertyPromotion) {
+          setVisibility(param as PromotedParameter, config.publicProperties === true);
+        }
+
+        addCollectionDocstring(param, prop, 'var', config);
+      }
+
+      if (constructorBody) {
+        constructor.setBody(constructorBody);
+      }
     }
   } else if (config.framework === 'doctrine') {
     // Even with no constructor, Doctrine needs collection initialization
